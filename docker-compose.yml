@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fieldshift-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fieldshift
+      POSTGRES_PASSWORD: fieldshift_pw
+      POSTGRES_DB: fieldshift_ethiopia
+    ports:
+      - "5432:5432"
+    volumes:
+      - fieldshift_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fieldshift -d fieldshift_ethiopia"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: fieldshift-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      CORS_ORIGIN: http://localhost:5173
+      DATABASE_URL: postgresql://fieldshift:fieldshift_pw@postgres:5432/fieldshift_ethiopia?schema=public
+      NASA_POWER_BASE_URL: https://power.larc.nasa.gov/api/temporal
+      NASA_CMR_SEARCH_URL: https://cmr.earthdata.nasa.gov/search
+      NASA_ORNL_MODIS_URL: https://modis.ornl.gov/rst/api/v1
+      OPEN_METEO_FORECAST_URL: https://api.open-meteo.com/v1/forecast
+    ports:
+      - "4000:4000"
+
+  client:
+    build:
+      context: .
+      dockerfile: apps/client/Dockerfile
+    container_name: fieldshift-client
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "5173:80"
+
+volumes:
+  fieldshift_pgdata:

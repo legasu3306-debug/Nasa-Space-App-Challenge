@@ -1,0 +1,3270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <title>FieldShift Ethiopia — NASA Earth Observation Agricultural Decision Support</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Ethiopic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@0.441.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      --background: #F7F8F2;
+      --surface: #FFFFFF;
+      --primary: #245B3C;
+      --primary-light: #E8F0E9;
+      --secondary: #829B77;
+      --earth: #A66B45;
+      --text: #202B24;
+      --muted: #748077;
+      --border: #E2E8E0;
+      --warning: #C58A27;
+      --danger: #B94A48;
+    }
+    body {
+      background-color: var(--background);
+      color: var(--text);
+      font-family: 'Inter', 'Noto Sans Ethiopic', system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+    .bg-app { background-color: var(--background); }
+    .bg-surface { background-color: var(--surface); }
+    .bg-primary { background-color: var(--primary); }
+    .bg-primary-light { background-color: var(--primary-light); }
+    .bg-earth { background-color: var(--earth); }
+    .text-primary-brand { color: var(--primary); }
+    .text-earth { color: var(--earth); }
+    .text-muted-brand { color: var(--muted); }
+    .border-brand { border-color: var(--border); }
+    .badge-suitable {
+      background-color: #E3F2E6;
+      color: #1B4D2E;
+      border: 1px solid #B7DEC0;
+    }
+    .badge-risky {
+      background-color: #FDF3E1;
+      color: #8A5B0D;
+      border: 1px solid #F3D59B;
+    }
+    .badge-danger {
+      background-color: #FBE9E9;
+      color: #8E2826;
+      border: 1px solid #E9B8B7;
+    }
+    .badge-insufficient {
+      background-color: #EEF1EE;
+      color: #4A554D;
+      border: 1px solid #D0D7D1;
+    }
+    .nav-btn-active {
+      background-color: var(--primary);
+      color: #FFFFFF;
+      font-weight: 600;
+    }
+    .nav-btn-inactive {
+      color: var(--text);
+    }
+    .nav-btn-inactive:hover {
+      background-color: var(--primary-light);
+    }
+    #farmMapContainer {
+      height: 340px;
+      width: 100%;
+      border-radius: 0.5rem;
+      z-index: 10;
+    }
+    input[type="range"] {
+      accent-color: #245B3C;
+    }
+  </style>
+<link rel="manifest" href="/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Top Offline / Telemetry Provenance Bar -->
+  <header class="sticky top-0 z-40 bg-surface border-b border-brand shadow-sm">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-lg bg-primary flex items-center justify-center text-white font-bold text-sm tracking-tight shadow-sm">
+          FS
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-base sm:text-lg tracking-tight text-primary-brand" id="appBrandTitle">FieldShift Ethiopia</span>
+            <span class="text-xs px-2 py-0.5 rounded font-medium bg-primary-light text-primary-brand border border-brand">NASA Space Apps 2026</span>
+          </div>
+          <p class="text-xs text-muted-brand hidden sm:block" id="appBrandSubtitle">Earth Observation &amp; Local Agricultural Decision-Support System</p>
+        </div>
+      </div>
+
+      <!-- Active Farm Selector + Live Telemetry & Language Controls -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex items-center gap-1.5 bg-app px-2.5 py-1.5 rounded-lg border border-brand">
+          <i data-lucide="map-pin" class="w-4 h-4 text-primary-brand"></i>
+          <label for="globalFarmSelect" class="sr-only">Select Farm</label>
+          <select id="globalFarmSelect" onchange="handleGlobalFarmChange(this.value)" class="bg-transparent text-xs sm:text-sm font-medium focus:outline-none cursor-pointer">
+          </select>
+        </div>
+
+        <button type="button" id="btnFetchLiveTelemetry" onclick="refreshLiveTelemetry()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-white hover:opacity-95 transition shadow-sm">
+          <i data-lucide="satellite" class="w-3.5 h-3.5"></i>
+          <span id="lblSyncBtn">Sync Live NASA + Forecast</span>
+        </button>
+
+        <button type="button" id="btnToggleOfflineSim" onclick="toggleOfflineSimulation()" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-brand bg-surface hover:bg-primary-light transition">
+          <span id="offlineDot" class="w-2 h-2 rounded-full bg-emerald-600"></span>
+          <span id="offlineStatusLabel">Online Mode</span>
+        </button>
+
+        <div class="flex items-center border border-brand rounded-lg overflow-hidden bg-app text-xs font-medium">
+          <button type="button" id="langBtnEn" onclick="setAppLanguage('en')" class="px-2 py-1.5 bg-primary text-white">EN</button>
+          <button type="button" id="langBtnAm" onclick="setAppLanguage('am')" class="px-2 py-1.5 hover:bg-primary-light">አማርኛ</button>
+          <button type="button" id="langBtnOm" onclick="setAppLanguage('om')" class="px-2 py-1.5 hover:bg-primary-light">Oromoo</button>
+        </div>
+
+        <button type="button" id="btnSpeakActiveScreen" onclick="speakCurrentScreenSummary()" title="Read current recommendation aloud" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-brand bg-surface hover:bg-primary-light transition">
+          <i data-lucide="volume-2" class="w-4 h-4 text-earth"></i>
+          <span class="hidden md:inline" id="lblVoiceBtn">Listen</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Sub-bar: Data Freshness & Offline Provenance Notice -->
+    <div id="telemetryProvenanceBanner" class="bg-primary-light border-t border-brand px-3 sm:px-6 py-1.5 text-xs flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span id="provenanceStateBadge" class="px-2 py-0.5 rounded font-semibold bg-white text-primary-brand border border-brand">Initializing</span>
+        <span id="provenanceSummaryText" class="text-slate-800">Connecting to NASA LaRC POWER Agroclimatology API &amp; Open-Meteo Forecast API...</span>
+      </div>
+      <div class="flex items-center gap-3 text-muted-brand">
+        <span id="provenanceCoordLabel">Coords: 8.7500°N, 38.9800°E</span>
+        <span id="provenanceTimestampLabel">Last sync: --</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Layout: Sidebar (Desktop) + Content Area -->
+  <div class="flex-1 max-w-7xl w-full mx-auto flex flex-col lg:flex-row gap-4 px-3 sm:px-6 py-4 pb-24 lg:pb-8">
+
+    <!-- Desktop Sidebar Navigation -->
+    <aside class="w-full lg:w-64 shrink-0">
+      <nav aria-label="Main Navigation" class="bg-surface rounded-xl border border-brand p-2.5 shadow-sm">
+        <div class="text-[11px] font-semibold uppercase tracking-wider text-muted-brand px-2.5 py-1.5" id="navGroupCore">Overview &amp; Farms</div>
+        <div class="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-1 gap-1">
+          <button type="button" data-route="dashboard" onclick="navigateToRoute('dashboard')" class="nav-route-btn nav-btn-active flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs sm:text-sm text-left transition">
+            <i data-lucide="layout-dashboard" class="w-4 h-4 shrink-0"></i>
+            <span data-i18n="nav_dashboard">Dashboard</span>
+          </button>
+          <button type="button" data-route="farms" onclick="navigateToRoute('farms')" class="nav-route-btn nav-btn-inactive flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs sm:text-sm text-left transition">
+            <i data-lucide="tractor" class="w-4 h-4 shrink-0"></i>
+            <span data-i18n="nav_farms">Farms &amp; Fields</span>
+          </button>
+          <button type="button" data-route="weather" onclick="navigateToRoute('weather')" class="nav-route-btn nav-btn-inactive flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs sm:text-sm text-left transition">
+            <i data-lucide="cloud-sun-rain" class="w-4 h-4 shrink-0"></i>
+            <span data-i18n="nav_weather">Weather Intelligence</span>
+          </button>
+        </div>
+
+        <div class="text-[11px] font-semibold uppercase tracking-wider text-muted-brand px-2.5 pt-3 pb-1.5" id="navGroupModA">Module A: Weather Decisions</div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-1 gap-1">
+          <button type="button" data-route="sowing" onclick="navigateToRoute('sowing')" class="nav-route-btn nav-btn-inactive flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs sm:text-sm text-left transition">
+            <i data-lucide="sprout" class="w-4 h-4 shrink-0"></i>
+            <span data-i18n="nav_sowing">1. Sowing &amp; Onset</span>
+          </button>
+          <button type="button" data-route="harvesting" onclick="navigateToRoute('harvesting')" class="nav-route-btn nav-btn-inactive flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs sm:text-sm text-left transition">
+            <i data-lucide="wheat" class="w-4 h-4 shrink-0"></i>
+            <span data-i18n="nav_harvesting">2. Harvest Windows</span>
+          </button>
+          <button type="button" data-route="threshing" onclick="navigateToRoute('threshing')" class="nav-route-btn nav-btn-inactive flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs sm:text-sm text-left transition">
+            <i data-lucide="wind" class="w-4 h-4 shrink-0"></i>
+            <span data-i18n="nav_threshing">3. Threshing &amp; Wind</span>
+          </button>
+          <button type="button" data-route="maturity" onclick="navigateToRoute('maturity')" class="nav-route-btn nav-btn-inactive flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs sm:text-sm text-left transition">
+            <i data-lucide="scale" class="w-4 h-4 shrink-0"></i>
+            <span data-i18n="nav_maturity">4. Maturity vs. Risk</span>
+          </button>
+        </div>
+
+        <div class="text-[11px] font-semibold uppercase tracking-wider text-muted-brand px-2.5 pt-3 pb-1.5" id="navGroupModB">Module B &amp; Transparency</div>
+        <div class="grid grid-cols-3 lg:grid-cols-1 gap-1">
+          <button type="button" data-route="rotation" onclick="navigateToRoute('rotation')" class="nav-route-btn nav-btn-inactive flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs sm:text-sm text-left transition">
+            <i data-lucide="refresh-cw" class="w-4 h-4 shrink-0"></i>
+            <span data-i18n="nav_rotation">5. Crop Rotation</span>
+          </button>
+          <button type="button" data-route="datasources" onclick="navigateToRoute('datasources')" class="nav-route-btn nav-btn-inactive flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs sm:text-sm text-left transition">
+            <i data-lucide="database" class="w-4 h-4 shrink-0"></i>
+            <span data-i18n="nav_datasources">Data Sources</span>
+          </button>
+          <button type="button" data-route="settings" onclick="navigateToRoute('settings')" class="nav-route-btn nav-btn-inactive flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs sm:text-sm text-left transition">
+            <i data-lucide="sliders" class="w-4 h-4 shrink-0"></i>
+            <span data-i18n="nav_settings">Offline &amp; Settings</span>
+          </button>
+        </div>
+
+        <!-- Decision-Support Disclaimer Card -->
+        <div class="mt-4 p-3 rounded-lg bg-app border border-brand text-xs text-muted-brand leading-relaxed">
+          <div class="font-semibold text-slate-800 mb-1 flex items-center gap-1.5">
+            <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-earth"></i>
+            <span>Decision-Support Boundary</span>
+          </div>
+          FieldShift provides evidence from NASA gridded observations and external weather models. It never guarantees rainfall, yield, or storage safety. Always verify local field and grain conditions.
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Dynamic View Container -->
+    <main class="flex-1 min-w-0 space-y-5">
+
+      <!-- ================================================================== -->
+      <!-- VIEW 1: DASHBOARD (#/)                                             -->
+      <!-- ================================================================== -->
+      <section id="view-dashboard" class="route-section space-y-5">
+        <!-- Farm Context Header Banner -->
+        <div class="bg-surface rounded-xl border border-brand p-4 sm:p-5 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded bg-primary-light text-primary-brand" id="dashFarmZoneBadge">East Shewa • Oromia</span>
+                <span class="text-xs text-muted-brand" id="dashFarmElevationBadge">Elevation: 1,900 m a.s.l. (Weyna Dega)</span>
+              </div>
+              <h1 class="text-xl sm:text-2xl font-bold mt-1 text-slate-900" id="dashFarmTitle">Ada'a / Bishoftu Model Extension Cluster</h1>
+              <p class="text-xs sm:text-sm text-muted-brand mt-0.5" id="dashFarmSubmeta">
+                Extension Lead: <span id="dashFarmerName" class="font-medium text-slate-800">Bekele Tadesse (DA Cluster)</span> •
+                Active Field: <span id="dashFieldName" class="font-medium text-slate-800">Plot A1 — Vertisol Teff &amp; Chickpea Block (1.5 ha)</span>
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" onclick="navigateToRoute('farms')" class="px-3 py-2 rounded-lg text-xs font-semibold border border-brand bg-app hover:bg-primary-light transition flex items-center gap-1.5">
+                <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                <span>Manage Farms &amp; Map</span>
+              </button>
+              <button type="button" onclick="navigateToRoute('datasources')" class="px-3 py-2 rounded-lg text-xs font-semibold border border-brand bg-app hover:bg-primary-light transition flex items-center gap-1.5">
+                <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-primary-brand"></i>
+                <span>Verify NASA Provenance</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Top 4 Environmental Telemetry Strip -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4 pt-4 border-t border-brand">
+            <div class="p-3 rounded-lg bg-app border border-brand">
+              <div class="flex items-center justify-between text-xs text-muted-brand">
+                <span>14-Day NASA Rainfall</span>
+                <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white border border-brand">NASA POWER</span>
+              </div>
+              <div class="text-lg sm:text-xl font-bold mt-1 text-slate-900" id="dashKpiRain14">-- mm</div>
+              <div class="text-xs text-muted-brand mt-0.5" id="dashKpiRainSub">Loading PRECTOTCORR...</div>
+            </div>
+
+            <div class="p-3 rounded-lg bg-app border border-brand">
+              <div class="flex items-center justify-between text-xs text-muted-brand">
+                <span>7-Day Forecast Rain</span>
+                <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200">NON-NASA</span>
+              </div>
+              <div class="text-lg sm:text-xl font-bold mt-1 text-slate-900" id="dashKpiForecast7">-- mm</div>
+              <div class="text-xs text-muted-brand mt-0.5" id="dashKpiForecastSub">Open-Meteo IFS/GFS</div>
+            </div>
+
+            <div class="p-3 rounded-lg bg-app border border-brand">
+              <div class="flex items-center justify-between text-xs text-muted-brand">
+                <span>Temp &amp; Relative Humidity</span>
+                <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white border border-brand">T2M / RH2M</span>
+              </div>
+              <div class="text-lg sm:text-xl font-bold mt-1 text-slate-900" id="dashKpiTempRh">-- °C / --%</div>
+              <div class="text-xs text-muted-brand mt-0.5" id="dashKpiTempSub">2m agroclimatology</div>
+            </div>
+
+            <div class="p-3 rounded-lg bg-app border border-brand">
+              <div class="flex items-center justify-between text-xs text-muted-brand">
+                <span>Root-Zone Soil Wetness</span>
+                <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white border border-brand">GWETROOT</span>
+              </div>
+              <div class="text-lg sm:text-xl font-bold mt-1 text-slate-900" id="dashKpiSoilWet">--</div>
+              <div class="text-xs text-muted-brand mt-0.5" id="dashKpiSoilSub">0–100 cm index (0–1)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Five Core Agricultural Decision Cards -->
+        <div>
+          <div class="flex items-center justify-between mb-2.5">
+            <h2 class="text-base sm:text-lg font-bold text-slate-900" data-i18n="dash_decisions_heading">Active Agricultural Decision Support (5 Core Modules)</h2>
+            <span class="text-xs text-muted-brand">Deterministic rule engines • Zero black-box AI</span>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" id="dashboardDecisionCardsGrid">
+          </div>
+        </div>
+
+        <!-- Dashboard Split: Recent Rainfall & Forecast Chart + Documented Station Baseline -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div class="lg:col-span-2 bg-surface rounded-xl border border-brand p-4 shadow-sm">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div>
+                <h3 class="font-bold text-sm sm:text-base text-slate-900">NASA Observed Daily Rainfall vs. 7-Day Operational Forecast</h3>
+                <p class="text-xs text-muted-brand">Green bars: NASA POWER <code class="font-mono">PRECTOTCORR</code> (mm/d) • Terracotta bars: Open-Meteo Forecast (Non-NASA, mm/d)</p>
+              </div>
+              <span id="dashChartSourceTag" class="text-[11px] px-2 py-0.5 rounded bg-primary-light text-primary-brand font-medium">Real Telemetry</span>
+            </div>
+            <div class="relative h-72 w-full">
+              <canvas id="dashCombinedRainChart"></canvas>
+            </div>
+          </div>
+
+          <div class="bg-surface rounded-xl border border-brand p-4 shadow-sm flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-bold text-sm sm:text-base text-slate-900">Documented Agro-Ecological Baseline</h3>
+                <span class="text-[11px] px-2 py-0.5 rounded bg-app border border-brand font-medium">Peer-Reviewed</span>
+              </div>
+              <p class="text-xs text-muted-brand mb-3">Published reference climatology and soil properties for the selected Ethiopian agricultural research zone:</p>
+              <div id="dashStationBaselineBox" class="space-y-2 text-xs">
+              </div>
+            </div>
+            <div class="mt-4 pt-3 border-t border-brand text-[11px] text-muted-brand">
+              <span class="font-semibold text-slate-700">Why this matters:</span> Satellite grid cells (10–55 km) are always interpreted alongside documented local station baselines and physical field checks.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- VIEW 2: FARM & FIELD MANAGEMENT (#/farms)                          -->
+      <!-- ================================================================== -->
+      <section id="view-farms" class="route-section hidden space-y-5">
+        <div class="bg-surface rounded-xl border border-brand p-4 sm:p-5 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <h1 class="text-lg sm:text-xl font-bold text-slate-900">Farm &amp; Field Profile Management</h1>
+              <p class="text-xs sm:text-sm text-muted-brand">Select an existing extension cluster farm, click on the map to set coordinates, or register a new smallholder farm.</p>
+            </div>
+            <button type="button" onclick="useBrowserGpsForFarm()" class="px-3 py-2 rounded-lg text-xs font-semibold bg-primary text-white hover:opacity-95 transition flex items-center gap-1.5">
+              <i data-lucide="locate-fixed" class="w-3.5 h-3.5"></i>
+              <span>Use Device GPS Location</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            <!-- Map Column -->
+            <div class="lg:col-span-7 space-y-3">
+              <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span class="font-semibold text-slate-800">Interactive Field Location Map (Click anywhere in Ethiopia to set coordinates)</span>
+                <div class="flex items-center gap-1.5">
+                  <button type="button" onclick="switchMapTileLayer('topo')" id="btnMapLayerTopo" class="px-2 py-1 rounded bg-primary text-white font-medium">Topographic</button>
+                  <button type="button" onclick="switchMapTileLayer('sat')" id="btnMapLayerSat" class="px-2 py-1 rounded bg-app border border-brand font-medium">Satellite Imagery</button>
+                </div>
+              </div>
+              <div id="farmMapContainer" class="border border-brand shadow-inner"></div>
+              <p class="text-[11px] text-muted-brand">
+                Map tiles: Esri ArcGIS World Topographic &amp; World Imagery MapServer (<code class="font-mono">server.arcgisonline.com</code>) + NASA SRTM elevation context.
+              </p>
+
+              <!-- Registered Farms List -->
+              <div class="pt-2">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-muted-brand mb-2">Registered Extension Cluster Farms (<span id="farmCountBadge">4</span>)</h3>
+                <div id="registeredFarmsList" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+              </div>
+            </div>
+
+            <!-- Add / Edit Farm & Field Form -->
+            <div class="lg:col-span-5 bg-app rounded-xl border border-brand p-4 space-y-3">
+              <h3 class="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                <i data-lucide="plus-circle" class="w-4 h-4 text-primary-brand"></i>
+                <span>Register / Update Farm &amp; Field Profile</span>
+              </h3>
+              <form id="farmProfileForm" onsubmit="handleSaveFarmProfile(event)" class="space-y-3 text-xs">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label for="inputFarmName" class="block font-semibold text-slate-700 mb-1">Farm / Cluster Name *</label>
+                    <input id="inputFarmName" type="text" required placeholder="e.g. Lume Woreda Demo Plot" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white" />
+                  </div>
+                  <div>
+                    <label for="inputFarmerName" class="block font-semibold text-slate-700 mb-1">Farmer / Extension Agent *</label>
+                    <input id="inputFarmerName" type="text" required placeholder="e.g. Alemu Kebede" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white" />
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2">
+                  <div>
+                    <label for="inputRegion" class="block font-semibold text-slate-700 mb-1">Region</label>
+                    <select id="inputRegion" class="w-full px-2 py-1.5 rounded border border-brand bg-white">
+                      <option value="Oromia">Oromia</option>
+                      <option value="Amhara">Amhara</option>
+                      <option value="Tigray">Tigray</option>
+                      <option value="Central Ethiopia">Central Ethiopia</option>
+                      <option value="Sidama">Sidama</option>
+                      <option value="Somali">Somali</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="inputZone" class="block font-semibold text-slate-700 mb-1">Zone</label>
+                    <input id="inputZone" type="text" value="East Shewa" class="w-full px-2 py-1.5 rounded border border-brand bg-white" />
+                  </div>
+                  <div>
+                    <label for="inputWoreda" class="block font-semibold text-slate-700 mb-1">Woreda</label>
+                    <input id="inputWoreda" type="text" value="Ada'a (Bishoftu)" class="w-full px-2 py-1.5 rounded border border-brand bg-white" />
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2">
+                  <div>
+                    <label for="inputLat" class="block font-semibold text-slate-700 mb-1">Latitude (°N) *</label>
+                    <input id="inputLat" type="number" step="0.0001" min="3.0" max="15.0" required value="8.7500" class="w-full px-2 py-1.5 rounded border border-brand bg-white font-mono" />
+                  </div>
+                  <div>
+                    <label for="inputLon" class="block font-semibold text-slate-700 mb-1">Longitude (°E) *</label>
+                    <input id="inputLon" type="number" step="0.0001" min="33.0" max="48.0" required value="38.9800" class="w-full px-2 py-1.5 rounded border border-brand bg-white font-mono" />
+                  </div>
+                  <div>
+                    <label for="inputElevation" class="block font-semibold text-slate-700 mb-1">Elevation (m)</label>
+                    <input id="inputElevation" type="number" step="10" min="200" max="4200" value="1900" class="w-full px-2 py-1.5 rounded border border-brand bg-white font-mono" />
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label for="inputAreaHa" class="block font-semibold text-slate-700 mb-1">Field Size (ha)</label>
+                    <input id="inputAreaHa" type="number" step="0.1" min="0.1" max="500" value="1.5" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white" />
+                  </div>
+                  <div>
+                    <label for="inputSlopePct" class="block font-semibold text-slate-700 mb-1">Terrain Slope (%)</label>
+                    <input id="inputSlopePct" type="number" step="0.5" min="0" max="60" value="3.0" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white" />
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label for="inputSoilType" class="block font-semibold text-slate-700 mb-1">Soil Type ("unknown" supported)</label>
+                    <select id="inputSoilType" class="w-full px-2 py-1.5 rounded border border-brand bg-white">
+                      <option value="unknown">Unknown (Not lab-tested)</option>
+                      <option value="Vertisol" selected>Vertisol (Black cracking clay / Koticha)</option>
+                      <option value="Nitisol">Nitisol (Reddish-brown highland clay/loam)</option>
+                      <option value="Loam">Loam (Medium texture fertile soil)</option>
+                      <option value="ClayLoam">Clay Loam</option>
+                      <option value="SandyLoam">Sandy Loam (Rift Valley / Kolla)</option>
+                      <option value="Andosol">Andosol (Volcanic Rift soil)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="inputSoilPh" class="block font-semibold text-slate-700 mb-1">Soil pH (Optional)</label>
+                    <input id="inputSoilPh" type="number" step="0.1" min="4.0" max="9.0" placeholder="Leave blank if unknown" value="6.8" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white" />
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label for="inputWaterRegime" class="block font-semibold text-slate-700 mb-1">Farming Water Regime</label>
+                    <select id="inputWaterRegime" class="w-full px-2 py-1.5 rounded border border-brand bg-white">
+                      <option value="rainfed" selected>Rain-fed (Seasonal Kiremt/Belg)</option>
+                      <option value="supplementary">Supplementary Water Harvesting</option>
+                      <option value="irrigated">Irrigated (River / Canal / Pump)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="inputCurrentCrop" class="block font-semibold text-slate-700 mb-1">Current Field Crop</label>
+                    <select id="inputCurrentCrop" class="w-full px-2 py-1.5 rounded border border-brand bg-white">
+                      <option value="TEFF" selected>Teff (ጤፍ / Xaafii)</option>
+                      <option value="WHEAT">Bread/Durum Wheat (ስንዴ / Qamadii)</option>
+                      <option value="MAIZE">Maize (በቆሎ / Boqqolloo)</option>
+                      <option value="BARLEY">Barley (ገብስ / Garbuu)</option>
+                      <option value="SORGHUM">Sorghum (ማሽላ / Misingaa)</option>
+                      <option value="CHICKPEA">Chickpea (ሽምብራ / Shumburaa)</option>
+                      <option value="FABA_BEAN">Faba Bean (ባቄላ / Baaqelaa)</option>
+                      <option value="FIELD_PEA">Field Pea (አተር / Atara)</option>
+                      <option value="LENTIL">Lentil (ምስር / Misira)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label for="inputPrevCrop1" class="block font-semibold text-slate-700 mb-1">Previous Season Crop (Yr -1)</label>
+                    <select id="inputPrevCrop1" class="w-full px-2 py-1.5 rounded border border-brand bg-white">
+                      <option value="WHEAT" selected>Wheat</option>
+                      <option value="TEFF">Teff</option>
+                      <option value="MAIZE">Maize</option>
+                      <option value="BARLEY">Barley</option>
+                      <option value="SORGHUM">Sorghum</option>
+                      <option value="CHICKPEA">Chickpea</option>
+                      <option value="FABA_BEAN">Faba Bean</option>
+                      <option value="FIELD_PEA">Field Pea</option>
+                      <option value="LENTIL">Lentil</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="inputPlantingDate" class="block font-semibold text-slate-700 mb-1">Planting Date</label>
+                    <input id="inputPlantingDate" type="date" value="2026-07-18" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white" />
+                  </div>
+                </div>
+
+                <button type="submit" class="w-full py-2.5 rounded-lg bg-primary text-white font-semibold hover:opacity-95 transition shadow-sm">
+                  Save Farm Profile &amp; Fetch Live NASA Telemetry
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- VIEW 3: WEATHER INTELLIGENCE (#/weather)                           -->
+      <!-- ================================================================== -->
+      <section id="view-weather" class="route-section hidden space-y-5">
+        <div class="bg-surface rounded-xl border border-brand p-4 sm:p-5 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div>
+              <h1 class="text-lg sm:text-xl font-bold text-slate-900">Agricultural Weather &amp; Earth Observation Intelligence</h1>
+              <p class="text-xs sm:text-sm text-muted-brand">Historical &amp; recent agroclimatology from NASA LaRC POWER (<code class="font-mono">AG</code> community) paired with 7-day operational forecasts (<code class="font-mono">Open-Meteo</code>, Non-NASA).</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="px-2.5 py-1 rounded bg-primary-light text-primary-brand font-semibold" id="weatherViewCoordBadge">8.7500°N, 38.9800°E</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="p-4 rounded-xl bg-app border border-brand">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-bold text-sm text-slate-900">NASA POWER Daily Precipitation &amp; Max/Min Temperature (Last 30 Valid Days)</h3>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-white border border-brand">NASA LaRC POWER</span>
+              </div>
+              <div class="relative h-72 w-full">
+                <canvas id="weatherNasaHistoryChart"></canvas>
+              </div>
+            </div>
+
+            <div class="p-4 rounded-xl bg-app border border-brand">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-bold text-sm text-slate-900">NASA Surface (<code class="font-mono">GWETTOP</code>) vs. Root-Zone (<code class="font-mono">GWETROOT</code>) Soil Wetness &amp; Humidity</h3>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-white border border-brand">MERRA-2 / SMAP Context</span>
+              </div>
+              <div class="relative h-72 w-full">
+                <canvas id="weatherSoilMoistureChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- 7-Day Operational Forecast Table -->
+          <div class="mt-5 pt-4 border-t border-brand">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div>
+                <h3 class="font-bold text-sm sm:text-base text-slate-900">Upcoming 7-Day Operational Weather Forecast</h3>
+                <p class="text-xs text-muted-brand">Explicit Attribution: <strong class="text-earth">External Operational Forecast Provider (Open-Meteo ECMWF IFS 9km / NOAA GFS) — NOT NASA Data</strong></p>
+              </div>
+              <span class="text-xs font-mono px-2.5 py-1 rounded bg-amber-50 text-amber-900 border border-amber-200" id="forecastUpdatedTimestamp">Updated: --</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr class="bg-primary-light text-primary-brand border-b border-brand">
+                    <th class="py-2.5 px-3 font-semibold">Forecast Date</th>
+                    <th class="py-2.5 px-3 font-semibold text-right">Max Rain Prob (%)</th>
+                    <th class="py-2.5 px-3 font-semibold text-right">Expected Rain (mm)</th>
+                    <th class="py-2.5 px-3 font-semibold text-right">Temp Min / Max (°C)</th>
+                    <th class="py-2.5 px-3 font-semibold text-right">Max 10m Wind (m/s)</th>
+                    <th class="py-2.5 px-3 font-semibold text-right">Max Wind Gusts (m/s)</th>
+                    <th class="py-2.5 px-3 font-semibold">Field Advisory</th>
+                  </tr>
+                </thead>
+                <tbody id="weatherForecastTableBody" class="divide-y divide-slate-200">
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- VIEW 4: SOWING & RAINFALL-ONSET INTELLIGENCE (#/sowing)            -->
+      <!-- ================================================================== -->
+      <section id="view-sowing" class="route-section hidden space-y-5">
+        <div class="bg-surface rounded-xl border border-brand p-4 sm:p-5 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <span class="text-xs font-semibold uppercase tracking-wider text-primary-brand">Module A.1 • Sowing &amp; Rainfall-Onset Intelligence</span>
+              <h1 class="text-lg sm:text-xl font-bold text-slate-900 mt-0.5">Has the rainy season started reliably enough to consider sowing?</h1>
+            </div>
+            <span id="sowingDecisionBadge" class="px-3 py-1 rounded-full text-xs font-bold badge-risky">Evaluating...</span>
+          </div>
+
+          <!-- Configurable Onset Threshold Controls -->
+          <div class="p-3.5 rounded-xl bg-app border border-brand mb-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <span class="text-xs font-bold text-slate-800">Configurable Agro-Ecological Onset Criteria (Ethiopian INSTAT / NMA Method)</span>
+              <span class="text-[11px] text-muted-brand">Adjust thresholds for local agro-ecological zone (Kolla / Weyna Dega / Dega)</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+              <div>
+                <div class="flex justify-between font-medium mb-1">
+                  <label for="sliderOnsetMm">3-Day Rain Accumulation Threshold:</label>
+                  <span id="lblOnsetMmVal" class="font-bold text-primary-brand">20 mm</span>
+                </div>
+                <input id="sliderOnsetMm" type="range" min="10" max="35" step="1" value="20" oninput="updateSowingThresholds()" class="w-full" />
+                <div class="flex justify-between text-[10px] text-muted-brand"><span>10 mm (Semi-arid)</span><span>20 mm (Standard)</span><span>35 mm (Humid)</span></div>
+              </div>
+              <div>
+                <div class="flex justify-between font-medium mb-1">
+                  <label for="sliderDrySpellDays">Max Post-Onset Dry Spell Tolerance:</label>
+                  <span id="lblDrySpellDaysVal" class="font-bold text-primary-brand">7 days</span>
+                </div>
+                <input id="sliderDrySpellDays" type="range" min="4" max="14" step="1" value="7" oninput="updateSowingThresholds()" class="w-full" />
+                <div class="flex justify-between text-[10px] text-muted-brand"><span>4d (Sensitive)</span><span>7d (Standard)</span><span>14d (Drought-hardy)</span></div>
+              </div>
+              <div>
+                <div class="flex justify-between font-medium mb-1">
+                  <label for="selectSeasonMode">Target Cropping Season:</label>
+                  <span class="font-bold text-earth" id="lblTargetSeason">Kiremt (Jun–Sep)</span>
+                </div>
+                <select id="selectSeasonMode" onchange="updateSowingThresholds()" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white">
+                  <option value="Kiremt">Kiremt / Meher (Main Rainy Season: Jun–Sep)</option>
+                  <option value="Belg">Belg / Genna (Short Rainy Season: Feb–May)</option>
+                  <option value="Bona">Bona (Southeastern Highland Season: Aug–Dec)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Primary Sowing Recommendation Box -->
+          <div id="sowingMainExplanationBox" class="p-4 rounded-xl border border-brand bg-primary-light space-y-2 mb-4">
+          </div>
+
+          <!-- Sowing Metrics Strip -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 mb-4" id="sowingMetricsStrip">
+          </div>
+
+          <!-- Dry-Spell & Accumulation Timeline Chart -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div class="lg:col-span-2 p-4 rounded-xl bg-app border border-brand">
+              <h3 class="font-bold text-sm text-slate-900 mb-1">Rolling 3-Day Rainfall Accumulation vs. Onset Threshold (NASA POWER)</h3>
+              <p class="text-xs text-muted-brand mb-2">Compares observed rolling 3-day accumulation against your configured onset threshold line.</p>
+              <div class="relative h-72 w-full">
+                <canvas id="sowingAccumulationChart"></canvas>
+              </div>
+            </div>
+            <div class="p-4 rounded-xl bg-app border border-brand flex flex-col justify-between">
+              <div>
+                <h3 class="font-bold text-sm text-slate-900 mb-2">Why First Rain ≠ Safe Sowing</h3>
+                <ul class="space-y-2 text-xs text-slate-700 list-disc pl-4" id="sowingRisksList">
+                </ul>
+              </div>
+              <div class="mt-4 pt-3 border-t border-brand text-xs">
+                <div class="font-semibold text-slate-900 mb-1">Historical Seasonal Reference:</div>
+                <p id="sowingHistoricalRefText" class="text-muted-brand leading-relaxed"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- VIEW 5: HARVESTING INTELLIGENCE (#/harvesting)                     -->
+      <!-- ================================================================== -->
+      <section id="view-harvesting" class="route-section hidden space-y-5">
+        <div class="bg-surface rounded-xl border border-brand p-4 sm:p-5 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <span class="text-xs font-semibold uppercase tracking-wider text-primary-brand">Module A.2 • Harvesting Weather-Window Intelligence</span>
+              <h1 class="text-lg sm:text-xl font-bold text-slate-900 mt-0.5">Identify low-rainfall windows to cut and stack mature crops</h1>
+            </div>
+            <span id="harvestDecisionBadge" class="px-3 py-1 rounded-full text-xs font-bold badge-suitable">Evaluating...</span>
+          </div>
+
+          <div id="harvestSummaryBanner" class="p-4 rounded-xl bg-primary-light border border-brand mb-4 text-xs sm:text-sm">
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div class="lg:col-span-7 p-4 rounded-xl bg-app border border-brand">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-bold text-sm text-slate-900">7-Day Forecast Rain Probability (%) vs. Expected Rainfall (mm)</h3>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200">Open-Meteo (Non-NASA)</span>
+              </div>
+              <div class="relative h-72 w-full">
+                <canvas id="harvestWindowChart"></canvas>
+              </div>
+            </div>
+
+            <div class="lg:col-span-5 space-y-2.5">
+              <h3 class="font-bold text-sm text-slate-900">Rolling 3-Day Harvest Window Comparison</h3>
+              <p class="text-xs text-muted-brand">These upcoming periods have comparatively lower forecast rainfall risk. Check crop maturity and local field conditions before harvesting.</p>
+              <div id="harvestRollingWindowsList" class="space-y-2">
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- VIEW 6: THRESHING & WINNOWING INTELLIGENCE (#/threshing)           -->
+      <!-- ================================================================== -->
+      <section id="view-threshing" class="route-section hidden space-y-5">
+        <div class="bg-surface rounded-xl border border-brand p-4 sm:p-5 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <span class="text-xs font-semibold uppercase tracking-wider text-primary-brand">Module A.3 • Threshing &amp; Winnowing Sub-Daily Windows</span>
+              <h1 class="text-lg sm:text-xl font-bold text-slate-900 mt-0.5">When is there suitable dry air and steady wind to thresh and winnow?</h1>
+            </div>
+            <span class="px-2.5 py-1 rounded text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-300">Provisional Wind Thresholds</span>
+          </div>
+
+          <!-- Provisional Threshold Controls -->
+          <div class="p-3.5 rounded-xl bg-app border border-brand mb-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <span class="text-xs font-bold text-slate-800">Configurable Threshing &amp; Winnowing Thresholds (Marked Provisional — Calibrate per Grain Type)</span>
+              <div class="flex items-center gap-1.5 text-xs">
+                <button type="button" onclick="applyThreshingPreset(1.8, 6.0, 65)" class="px-2 py-1 rounded border border-brand bg-white hover:bg-primary-light">Fine Grain (Teff)</button>
+                <button type="button" onclick="applyThreshingPreset(2.5, 7.5, 65)" class="px-2 py-1 rounded border border-brand bg-white hover:bg-primary-light">Standard (Wheat/Barley)</button>
+                <button type="button" onclick="applyThreshingPreset(3.0, 8.5, 68)" class="px-2 py-1 rounded border border-brand bg-white hover:bg-primary-light">Heavy Pulse (Faba/Chickpea)</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+              <div>
+                <div class="flex justify-between font-medium mb-1">
+                  <label for="sliderMinWind">Min Winnowing Wind (10m):</label>
+                  <span id="lblMinWindVal" class="font-bold text-primary-brand">2.5 m/s</span>
+                </div>
+                <input id="sliderMinWind" type="range" min="1.0" max="5.0" step="0.5" value="2.5" oninput="updateThreshingThresholds()" class="w-full" />
+              </div>
+              <div>
+                <div class="flex justify-between font-medium mb-1">
+                  <label for="sliderMaxWind">Max Safe Wind Ceiling (Scatter Risk):</label>
+                  <span id="lblMaxWindVal" class="font-bold text-primary-brand">7.5 m/s</span>
+                </div>
+                <input id="sliderMaxWind" type="range" min="5.0" max="12.0" step="0.5" value="7.5" oninput="updateThreshingThresholds()" class="w-full" />
+              </div>
+              <div>
+                <div class="flex justify-between font-medium mb-1">
+                  <label for="sliderMaxRh">Max Relative Humidity for Drying:</label>
+                  <span id="lblMaxRhVal" class="font-bold text-primary-brand">65%</span>
+                </div>
+                <input id="sliderMaxRh" type="range" min="45" max="80" step="5" value="65" oninput="updateThreshingThresholds()" class="w-full" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Sub-daily comparison table + Wind Chart -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div class="lg:col-span-7 overflow-x-auto">
+              <h3 class="font-bold text-sm text-slate-900 mb-2">Sub-Daily Period Comparison (Morning / Afternoon / Evening — Next 72 Hours)</h3>
+              <table class="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr class="bg-primary-light text-primary-brand border-b border-brand">
+                    <th class="py-2 px-2.5 font-semibold">Date &amp; Period</th>
+                    <th class="py-2 px-2.5 font-semibold text-right">Rain Risk</th>
+                    <th class="py-2 px-2.5 font-semibold text-right">Wind / Gusts</th>
+                    <th class="py-2 px-2.5 font-semibold text-right">RH / Temp</th>
+                    <th class="py-2 px-2.5 font-semibold">Drying vs. Winnowing Assessment</th>
+                  </tr>
+                </thead>
+                <tbody id="threshingSubDailyTableBody" class="divide-y divide-slate-200">
+                </tbody>
+              </table>
+            </div>
+
+            <div class="lg:col-span-5 space-y-4">
+              <div class="p-4 rounded-xl bg-app border border-brand">
+                <h3 class="font-bold text-sm text-slate-900 mb-1">Sub-Daily 10m Wind Speed &amp; Gusts (m/s)</h3>
+                <p class="text-xs text-muted-brand mb-2">Open-Meteo hourly forecast aggregated by Morning, Afternoon, and Evening periods.</p>
+                <div class="relative h-64 w-full">
+                  <canvas id="threshingWindChart"></canvas>
+                </div>
+              </div>
+
+              <div class="p-3.5 rounded-xl bg-primary-light border border-brand text-xs space-y-1.5">
+                <div class="font-bold text-primary-brand">Agronomic Distinction: Drying vs. Winnowing</div>
+                <p class="text-slate-800"><strong>1. Drying &amp; Trampling (Awdma):</strong> Requires low relative humidity (&lt;65%) and zero rain so straw and glumes fracture cleanly under oxen trampling or beating.</p>
+                <p class="text-slate-800"><strong>2. Winnowing Separation:</strong> Requires steady horizontal wind (typically 2.5–7.5 m/s) to blow light chaff sideways while dense grain kernels drop onto the clean floor.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- VIEW 7: CROP MATURITY VS. WEATHER RISK (#/crop-maturity)           -->
+      <!-- ================================================================== -->
+      <section id="view-maturity" class="route-section hidden space-y-5">
+        <div class="bg-surface rounded-xl border border-brand p-4 sm:p-5 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <span class="text-xs font-semibold uppercase tracking-wider text-primary-brand">Module A.4 • Crop Maturity vs. Weather-Risk Matrix</span>
+              <h1 class="text-lg sm:text-xl font-bold text-slate-900 mt-0.5">Is the crop ready for harvesting, and what is the weather risk if delayed?</h1>
+            </div>
+            <span id="maturityDecisionBadge" class="px-3 py-1 rounded-full text-xs font-bold badge-risky">Evaluating...</span>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            <!-- Field Maturity Input Panel -->
+            <div class="lg:col-span-5 p-4 rounded-xl bg-app border border-brand space-y-3 text-xs">
+              <h3 class="font-bold text-sm text-slate-900">Extension Agent Field Observation Input</h3>
+              <p class="text-muted-brand">Satellite NDVI and weather forecasts cannot measure biological grain maturity or kernel moisture. Enter physical field observations below:</p>
+
+              <div>
+                <label for="matCropSelect" class="block font-semibold text-slate-700 mb-1">Crop Type (Documented FAO/EIAR Duration)</label>
+                <select id="matCropSelect" onchange="evaluateMaturityScreen()" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white">
+                  <option value="TEFF">Teff (90–130 days duration)</option>
+                  <option value="WHEAT">Bread/Durum Wheat (120–150 days duration)</option>
+                  <option value="MAIZE">Maize — Grain (125–180 days duration)</option>
+                  <option value="BARLEY">Barley (120–150 days duration)</option>
+                  <option value="SORGHUM">Sorghum (120–130 days duration)</option>
+                  <option value="CHICKPEA">Chickpea (95–125 days duration)</option>
+                  <option value="FABA_BEAN">Faba Bean (110–145 days duration)</option>
+                  <option value="FIELD_PEA">Field Pea (90–110 days duration)</option>
+                  <option value="LENTIL">Lentil (95–150 days duration)</option>
+                </select>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label for="matPlantingDate" class="block font-semibold text-slate-700 mb-1">Planting Date</label>
+                  <input id="matPlantingDate" type="date" value="2026-07-18" onchange="evaluateMaturityScreen()" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white" />
+                </div>
+                <div>
+                  <label for="matGrowthStage" class="block font-semibold text-slate-700 mb-1">Observed Growth Stage</label>
+                  <select id="matGrowthStage" onchange="evaluateMaturityScreen()" class="w-full px-2 py-1.5 rounded border border-brand bg-white">
+                    <option value="VEGETATIVE">Vegetative / Tillering</option>
+                    <option value="FLOWERING">Flowering / Heading</option>
+                    <option value="GRAIN_FILL">Milk / Dough Grain Fill</option>
+                    <option value="PHYSIOLOGICAL_MATURITY" selected>Physiological Maturity (Yellowing)</option>
+                    <option value="HARVEST_READY">Full Harvest Readiness (Dry Straw)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label for="matGrainDryness" class="block font-semibold text-slate-700 mb-1">Physical Kernel Dryness Bite/Thumbnail Test</label>
+                  <select id="matGrainDryness" onchange="evaluateMaturityScreen()" class="w-full px-2 py-1.5 rounded border border-brand bg-white">
+                    <option value="WET_SOFT">Soft / Milky when squeezed</option>
+                    <option value="DOUGH_STAGE">Firm Dough (dents with thumbnail)</option>
+                    <option value="HARD_DRY" selected>Hard / Cracks cleanly (Dry)</option>
+                    <option value="UNKNOWN">Not yet inspected in field</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="matMeasuredMoisture" class="block font-semibold text-slate-700 mb-1">Measured Grain Moisture % (If meter used)</label>
+                  <input id="matMeasuredMoisture" type="number" step="0.5" min="8" max="35" placeholder="Leave blank if unmeasured" oninput="evaluateMaturityScreen()" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white" />
+                </div>
+              </div>
+
+              <button type="button" onclick="saveFieldObservationOfflineQueue()" class="w-full py-2 rounded-lg bg-earth text-white font-semibold hover:opacity-95 transition">
+                Log Observation to Offline Sync Queue
+              </button>
+            </div>
+
+            <!-- Two Independent Dimensions Output -->
+            <div class="lg:col-span-7 space-y-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="p-4 rounded-xl bg-app border border-brand">
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-muted-brand">Dimension 1 (Agronomic)</span>
+                  <h4 class="font-bold text-base mt-1 text-slate-900" id="matDim1Title">Crop Maturity Status</h4>
+                  <p class="text-xs text-slate-700 mt-1" id="matDim1Desc"></p>
+                </div>
+                <div class="p-4 rounded-xl bg-app border border-brand">
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-muted-brand">Dimension 2 (Meteorological)</span>
+                  <h4 class="font-bold text-base mt-1 text-slate-900" id="matDim2Title">Upcoming 5-Day Weather Risk</h4>
+                  <p class="text-xs text-slate-700 mt-1" id="matDim2Desc"></p>
+                </div>
+              </div>
+
+              <!-- Trade-off explanation -->
+              <div id="matTradeoffBox" class="p-4 rounded-xl bg-primary-light border border-brand text-xs sm:text-sm space-y-2">
+              </div>
+
+              <!-- Mandatory Storage Spoilage Warning -->
+              <div id="matStorageWarningBox" class="p-4 rounded-xl badge-danger text-xs space-y-1">
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- VIEW 8: CROP ROTATION INTELLIGENCE (#/rotation)                    -->
+      <!-- ================================================================== -->
+      <section id="view-rotation" class="route-section hidden space-y-5">
+        <div class="bg-surface rounded-xl border border-brand p-4 sm:p-5 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <span class="text-xs font-semibold uppercase tracking-wider text-primary-brand">Module B • Deterministic Multi-Objective Crop Rotation Planner</span>
+              <h1 class="text-lg sm:text-xl font-bold text-slate-900 mt-0.5">Compare Explainable Crop Rotation Strategies</h1>
+              <p class="text-xs text-muted-brand">Evaluates documented FAO/EIAR crop water requirements, biological nitrogen fixation, root depth diversity, rust/Striga break cycles, and your weighted farmer priorities.</p>
+            </div>
+          </div>
+
+          <!-- Top Controls: Field Context + 8 Farmer Priority Weight Sliders -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-5">
+            <div class="lg:col-span-4 p-4 rounded-xl bg-app border border-brand space-y-2.5 text-xs">
+              <h3 class="font-bold text-sm text-slate-900">Field &amp; Crop Sequence Inputs</h3>
+              <div>
+                <label for="rotCurrentCrop" class="block font-semibold text-slate-700 mb-1">Current Season Crop</label>
+                <select id="rotCurrentCrop" onchange="runRotationPlanner()" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white">
+                  <option value="TEFF" selected>Teff (Poaceae — Shallow root, Mod N)</option>
+                  <option value="WHEAT">Bread/Durum Wheat (Poaceae — High N, Rust risk)</option>
+                  <option value="MAIZE">Maize (Poaceae — High water &amp; High N)</option>
+                  <option value="BARLEY">Barley (Poaceae — Cool highland cereal)</option>
+                  <option value="SORGHUM">Sorghum (Poaceae — Drought-hardy, Striga risk)</option>
+                  <option value="CHICKPEA">Chickpea (Fabaceae — N-fixer, Vertisol adapted)</option>
+                  <option value="FABA_BEAN">Faba Bean (Fabaceae — High N-fixer)</option>
+                  <option value="FIELD_PEA">Field Pea (Fabaceae — Short-duration N-fixer)</option>
+                  <option value="LENTIL">Lentil (Fabaceae — Cash pulse N-fixer)</option>
+                </select>
+              </div>
+              <div>
+                <label for="rotPrevCrop" class="block font-semibold text-slate-700 mb-1">Previous Year Crop (Yr -1)</label>
+                <select id="rotPrevCrop" onchange="runRotationPlanner()" class="w-full px-2.5 py-1.5 rounded border border-brand bg-white">
+                  <option value="WHEAT" selected>Bread/Durum Wheat (Poaceae)</option>
+                  <option value="TEFF">Teff (Poaceae)</option>
+                  <option value="MAIZE">Maize (Poaceae)</option>
+                  <option value="BARLEY">Barley (Poaceae)</option>
+                  <option value="SORGHUM">Sorghum (Poaceae)</option>
+                  <option value="CHICKPEA">Chickpea (Fabaceae)</option>
+                  <option value="FABA_BEAN">Faba Bean (Fabaceae)</option>
+                </select>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label for="rotSoilType" class="block font-semibold text-slate-700 mb-1">Soil Type</label>
+                  <select id="rotSoilType" onchange="runRotationPlanner()" class="w-full px-2 py-1.5 rounded border border-brand bg-white">
+                    <option value="Vertisol" selected>Vertisol (Black clay)</option>
+                    <option value="Nitisol">Nitisol (Red loam/clay)</option>
+                    <option value="Loam">Loam</option>
+                    <option value="SandyLoam">Sandy Loam</option>
+                    <option value="unknown">Unknown</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="rotWaterRegime" class="block font-semibold text-slate-700 mb-1">Water Regime</label>
+                  <select id="rotWaterRegime" onchange="runRotationPlanner()" class="w-full px-2 py-1.5 rounded border border-brand bg-white">
+                    <option value="rainfed" selected>Rain-fed</option>
+                    <option value="supplementary">Supplementary</option>
+                    <option value="irrigated">Irrigated</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- 8 Priority Sliders -->
+            <div class="lg:col-span-8 p-4 rounded-xl bg-app border border-brand">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                <h3 class="font-bold text-sm text-slate-900">Farmer Priority Weights (1 = Low Priority, 5 = Critical Priority)</h3>
+                <button type="button" onclick="resetRotationWeights()" class="text-xs px-2.5 py-1 rounded bg-white border border-brand hover:bg-primary-light">Reset Balanced Weights</button>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <div class="flex justify-between mb-1"><label for="wWater">Conserving Water</label><span id="val_wWater" class="font-bold">4</span></div>
+                  <input id="wWater" type="range" min="1" max="5" value="4" oninput="runRotationPlanner()" class="w-full" />
+                </div>
+                <div>
+                  <div class="flex justify-between mb-1"><label for="wSoil">Improving Soil Health</label><span id="val_wSoil" class="font-bold">5</span></div>
+                  <input id="wSoil" type="range" min="1" max="5" value="5" oninput="runRotationPlanner()" class="w-full" />
+                </div>
+                <div>
+                  <div class="flex justify-between mb-1"><label for="wNitrogen">Increasing Nitrogen</label><span id="val_wNitrogen" class="font-bold">5</span></div>
+                  <input id="wNitrogen" type="range" min="1" max="5" value="5" oninput="runRotationPlanner()" class="w-full" />
+                </div>
+                <div>
+                  <div class="flex justify-between mb-1"><label for="wErosion">Reducing Erosion</label><span id="val_wErosion" class="font-bold">3</span></div>
+                  <input id="wErosion" type="range" min="1" max="5" value="3" oninput="runRotationPlanner()" class="w-full" />
+                </div>
+                <div>
+                  <div class="flex justify-between mb-1"><label for="wForage">Livestock Forage/Straw</label><span id="val_wForage" class="font-bold">4</span></div>
+                  <input id="wForage" type="range" min="1" max="5" value="4" oninput="runRotationPlanner()" class="w-full" />
+                </div>
+                <div>
+                  <div class="flex justify-between mb-1"><label for="wIncome">Income Opportunities</label><span id="val_wIncome" class="font-bold">4</span></div>
+                  <input id="wIncome" type="range" min="1" max="5" value="4" oninput="runRotationPlanner()" class="w-full" />
+                </div>
+                <div>
+                  <div class="flex justify-between mb-1"><label for="wRisk">Reducing Failure Risk</label><span id="val_wRisk" class="font-bold">5</span></div>
+                  <input id="wRisk" type="range" min="1" max="5" value="5" oninput="runRotationPlanner()" class="w-full" />
+                </div>
+                <div>
+                  <div class="flex justify-between mb-1"><label for="wFood">Household Food Security</label><span id="val_wFood" class="font-bold">5</span></div>
+                  <input id="wFood" type="range" min="1" max="5" value="5" oninput="runRotationPlanner()" class="w-full" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Side-by-Side 4 Scenario Cards -->
+          <h3 class="font-bold text-sm sm:text-base text-slate-900 mb-2.5">Side-by-Side Rotation Scenario Comparison (Including Farmer's Current Baseline)</h3>
+          <div id="rotationScenariosGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
+          </div>
+
+          <!-- Rotation Chart & Documented Ethiopian Crop Catalogue Table -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-3 border-t border-brand">
+            <div class="lg:col-span-5 p-4 rounded-xl bg-app border border-brand">
+              <h3 class="font-bold text-sm text-slate-900 mb-1">Scenario Multi-Objective Component Breakdown</h3>
+              <p class="text-xs text-muted-brand mb-2">Deterministic weighted score across Water, Soil Health, Nitrogen Fixation, Pest Break, and Forage.</p>
+              <div class="relative h-72 w-full">
+                <canvas id="rotationComparisonChart"></canvas>
+              </div>
+            </div>
+
+            <div class="lg:col-span-7 overflow-x-auto">
+              <h3 class="font-bold text-sm text-slate-900 mb-2">Documented Ethiopian Crop Catalogue (FAO Paper 24 / Manual No. 3 &amp; EIAR References)</h3>
+              <table class="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr class="bg-primary-light text-primary-brand border-b border-brand">
+                    <th class="py-2 px-2.5 font-semibold">Crop (EN / AM / OM)</th>
+                    <th class="py-2 px-2.5 font-semibold">Family &amp; N-Fix</th>
+                    <th class="py-2 px-2.5 font-semibold text-right">Duration (d)</th>
+                    <th class="py-2 px-2.5 font-semibold text-right">Water Need (mm)</th>
+                    <th class="py-2 px-2.5 font-semibold text-right">FAO Kc Avg</th>
+                    <th class="py-2 px-2.5 font-semibold">Drought Sensitivity</th>
+                  </tr>
+                </thead>
+                <tbody id="cropCatalogueTableBody" class="divide-y divide-slate-200">
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- VIEW 9: DATA SOURCES & SCIENTIFIC TRANSPARENCY (#/data-sources)    -->
+      <!-- ================================================================== -->
+      <section id="view-datasources" class="route-section hidden space-y-5">
+        <div class="bg-surface rounded-xl border border-brand p-4 sm:p-5 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div>
+              <span class="text-xs font-semibold uppercase tracking-wider text-primary-brand">Scientific Transparency &amp; Verifiable Provenance</span>
+              <h1 class="text-lg sm:text-xl font-bold text-slate-900 mt-0.5">Integrated NASA Earth Observation &amp; Partner Datasets</h1>
+              <p class="text-xs sm:text-sm text-muted-brand">Every displayed measurement in FieldShift Ethiopia is traceable to a documented dataset, resolution, observation window, and processing method.</p>
+            </div>
+            <button type="button" onclick="refreshLiveTelemetry()" class="px-3 py-2 rounded-lg text-xs font-semibold bg-primary text-white hover:opacity-95 transition">
+              Re-Verify Live API Endpoints
+            </button>
+          </div>
+
+          <div id="dataSourcesCardsList" class="space-y-3">
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- VIEW 10: SETTINGS, OFFLINE CACHE & ACCESSIBILITY (#/settings)      -->
+      <!-- ================================================================== -->
+      <section id="view-settings" class="route-section hidden space-y-5">
+        <div class="bg-surface rounded-xl border border-brand p-4 sm:p-5 shadow-sm space-y-5">
+          <div>
+            <h1 class="text-lg sm:text-xl font-bold text-slate-900">Offline Storage, Language &amp; Extension Settings</h1>
+            <p class="text-xs sm:text-sm text-muted-brand">Manage IndexedDB offline snapshots, queued field observations, local-language voice synthesis, and unit preferences.</p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Offline IndexedDB Panel -->
+            <div class="p-4 rounded-xl bg-app border border-brand space-y-3 text-xs">
+              <div class="flex items-center justify-between">
+                <h3 class="font-bold text-sm text-slate-900">Offline-First Storage (IndexedDB + Local Cache)</h3>
+                <span id="settingsCacheBadge" class="px-2 py-0.5 rounded bg-primary-light text-primary-brand font-semibold">Active</span>
+              </div>
+              <p class="text-muted-brand">FieldShift caches compact processed regional indicators, farm profiles, and recent NASA/forecast snapshots so extension agents can review decisions without mobile data connectivity.</p>
+              <div id="offlineCacheStatsBox" class="p-3 rounded-lg bg-white border border-brand space-y-1">
+              </div>
+              <div class="flex flex-wrap gap-2 pt-1">
+                <button type="button" onclick="downloadAllClustersForOffline()" class="px-3 py-2 rounded-lg bg-primary text-white font-semibold hover:opacity-95 transition">
+                  Download All 4 Ethiopian Clusters for Offline Use
+                </button>
+                <button type="button" onclick="syncQueuedFieldObservations()" class="px-3 py-2 rounded-lg bg-earth text-white font-semibold hover:opacity-95 transition">
+                  Sync Queued Observations (<span id="lblQueuedObsCount">0</span>)
+                </button>
+                <button type="button" onclick="clearOfflineCache()" class="px-3 py-2 rounded-lg border border-brand bg-white hover:bg-red-50 text-red-800 font-semibold transition">
+                  Clear Cached Snapshots
+                </button>
+              </div>
+            </div>
+
+            <!-- Language & Voice Accessibility Panel -->
+            <div class="p-4 rounded-xl bg-app border border-brand space-y-3 text-xs">
+              <h3 class="font-bold text-sm text-slate-900">Local Language &amp; Voice Accessibility</h3>
+              <p class="text-muted-brand">Supports English, Amharic (<span class="font-semibold">አማርኛ</span>), and Afaan Oromo with browser speech synthesis and acoustic status cues.</p>
+              <div class="space-y-2">
+                <label for="settingsLangSelect" class="block font-semibold text-slate-700">Interface &amp; Audio Summary Language</label>
+                <select id="settingsLangSelect" onchange="setAppLanguage(this.value)" class="w-full px-2.5 py-2 rounded border border-brand bg-white">
+                  <option value="en">English (Extension Technical &amp; Farmer Summary)</option>
+                  <option value="am">አማርኛ — Amharic (የግብርና ኤክስቴንሽን መምሪያ)</option>
+                  <option value="om">Afaan Oromo (Gorsa Qonnaa fi Haala Qilleensaa)</option>
+                </select>
+              </div>
+              <div class="flex flex-wrap gap-2 pt-2">
+                <button type="button" onclick="speakCurrentScreenSummary()" class="px-3 py-2 rounded-lg bg-primary text-white font-semibold hover:opacity-95 transition flex items-center gap-1.5">
+                  <i data-lucide="volume-2" class="w-4 h-4"></i>
+                  <span>Test Voice Playback in Selected Language</span>
+                </button>
+                <button type="button" onclick="stopVoicePlayback()" class="px-3 py-2 rounded-lg border border-brand bg-white font-semibold hover:bg-primary-light transition">
+                  Stop Audio
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Queued Field Observations Log -->
+          <div class="pt-3 border-t border-brand">
+            <h3 class="font-bold text-sm text-slate-900 mb-2">Recorded Extension Field Observations Log</h3>
+            <div id="recordedObservationsTableWrap" class="text-xs"></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Toast Notification Container (No alert/confirm/prompt) -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 max-w-sm space-y-2 pointer-events-none"></div>
+
+  <script>
+
+    // Documented Ethiopian Crop Catalogue (FAO Paper 24 / Manual No. 3 & Ethiopian studies)
+    var CROP_CATALOGUE = [
+      {
+        code: 'TEFF',
+        nameEn: 'Teff',
+        nameAm: 'ጤፍ (Teff)',
+        nameOm: 'Xaafii',
+        scientific: 'Eragrostis tef (Zucc.) Trotter',
+        family: 'Poaceae',
+        durationMin: 90,
+        durationMax: 130,
+        waterNeedMin: 300,
+        waterNeedMax: 500,
+        kcAvg: 0.78,
+        droughtSensitivity: 'Low-Moderate',
+        optPhMin: 5.5,
+        optPhMax: 7.5,
+        preferredSoils: ['Vertisol', 'Nitisol', 'Loam', 'ClayLoam'],
+        nitrogenDemand: 'Moderate',
+        isNitrogenFixer: false,
+        rootDepth: 'Shallow',
+        residueCover: 'Moderate',
+        forageValue: 'High',
+        notes: 'Tolerates early waterlogging on Vertisols; benefits strongly from preceding Fabaceae pulse crop (Chickpea or Faba Bean). Fine straw is prized livestock feed.',
+        sourceUrl: 'https://dergipark.org.tr/tr/download/article-file/4335532'
+      },
+      {
+        code: 'MAIZE',
+        nameEn: 'Maize (Grain)',
+        nameAm: 'በቆሎ (Bekolo)',
+        nameOm: 'Boqqolloo',
+        scientific: 'Zea mays L.',
+        family: 'Poaceae',
+        durationMin: 125,
+        durationMax: 180,
+        waterNeedMin: 500,
+        waterNeedMax: 800,
+        kcAvg: 0.82,
+        droughtSensitivity: 'High (FAO Group 4)',
+        optPhMin: 5.5,
+        optPhMax: 7.0,
+        preferredSoils: ['Nitisol', 'Loam', 'Andosol'],
+        nitrogenDemand: 'High',
+        isNitrogenFixer: false,
+        rootDepth: 'Medium',
+        residueCover: 'High',
+        forageValue: 'High',
+        notes: 'FAO Group 4 high drought sensitivity at flowering/grain-fill; heavy nitrogen feeder (500–800 mm water need). Rotate with Faba Bean or Field Pea.',
+        sourceUrl: 'https://www.fao.org/4/u3160e/u3160e04.htm'
+      },
+      {
+        code: 'WHEAT',
+        nameEn: 'Bread / Durum Wheat',
+        nameAm: 'ስንዴ (Sinde)',
+        nameOm: 'Qamadii',
+        scientific: 'Triticum aestivum / durum',
+        family: 'Poaceae',
+        durationMin: 120,
+        durationMax: 150,
+        waterNeedMin: 450,
+        waterNeedMax: 650,
+        kcAvg: 0.78,
+        droughtSensitivity: 'Moderate',
+        optPhMin: 6.0,
+        optPhMax: 7.5,
+        preferredSoils: ['Vertisol', 'Nitisol', 'Loam', 'ClayLoam'],
+        nitrogenDemand: 'High',
+        isNitrogenFixer: false,
+        rootDepth: 'Medium',
+        residueCover: 'Moderate',
+        forageValue: 'Moderate',
+        notes: 'Continuous wheat-wheat or wheat-barley sequence builds Puccinia yellow/stem rust inoculum and grass weeds. Break cycle with Faba Bean or Field Pea.',
+        sourceUrl: 'https://www.fao.org/4/u3160e/u3160e04.htm'
+      },
+      {
+        code: 'BARLEY',
+        nameEn: 'Food / Malt Barley',
+        nameAm: 'ገብስ (Gebs)',
+        nameOm: 'Garbuu',
+        scientific: 'Hordeum vulgare L.',
+        family: 'Poaceae',
+        durationMin: 120,
+        durationMax: 150,
+        waterNeedMin: 450,
+        waterNeedMax: 600,
+        kcAvg: 0.78,
+        droughtSensitivity: 'Low-Moderate',
+        optPhMin: 5.8,
+        optPhMax: 7.8,
+        preferredSoils: ['Nitisol', 'Loam'],
+        nitrogenDemand: 'Moderate',
+        isNitrogenFixer: false,
+        rootDepth: 'Medium',
+        residueCover: 'Moderate',
+        forageValue: 'High',
+        notes: 'Highland cool-tolerant cereal (120–150 days per FAO Table 6); shares rust and root rot pathogens with Wheat.',
+        sourceUrl: 'https://www.fao.org/4/u3160e/u3160e04.htm'
+      },
+      {
+        code: 'SORGHUM',
+        nameEn: 'Sorghum',
+        nameAm: 'ማሽላ (Mashila)',
+        nameOm: 'Misingaa',
+        scientific: 'Sorghum bicolor (L.) Moench',
+        family: 'Poaceae',
+        durationMin: 120,
+        durationMax: 130,
+        waterNeedMin: 450,
+        waterNeedMax: 650,
+        kcAvg: 0.78,
+        droughtSensitivity: 'Low (FAO Group 2)',
+        optPhMin: 5.5,
+        optPhMax: 8.0,
+        preferredSoils: ['Vertisol', 'Loam', 'SandyLoam', 'ClayLoam'],
+        nitrogenDemand: 'Moderate',
+        isNitrogenFixer: false,
+        rootDepth: 'Deep',
+        residueCover: 'High',
+        forageValue: 'High',
+        notes: 'FAO Group 2 drought-resilient cereal with deep root system (450–650 mm). Rotate with Chickpea or Lentil to suppress Striga hermonthica.',
+        sourceUrl: 'https://www.fao.org/4/u3160e/u3160e04.htm'
+      },
+      {
+        code: 'CHICKPEA',
+        nameEn: 'Chickpea (Desi/Kabuli)',
+        nameAm: 'ሽምብራ (Shimbra)',
+        nameOm: 'Shumburaa',
+        scientific: 'Cicer arietinum L.',
+        family: 'Fabaceae',
+        durationMin: 95,
+        durationMax: 125,
+        waterNeedMin: 300,
+        waterNeedMax: 500,
+        kcAvg: 0.79,
+        droughtSensitivity: 'Low-Moderate',
+        optPhMin: 6.0,
+        optPhMax: 8.0,
+        preferredSoils: ['Vertisol', 'ClayLoam', 'Loam'],
+        nitrogenDemand: 'Low',
+        isNitrogenFixer: true,
+        rootDepth: 'Deep',
+        residueCover: 'Low',
+        forageValue: 'Moderate',
+        notes: 'Symbiotic Rhizobium nitrogen fixer with deep taproot; thrives on residual Vertisol moisture in central Ethiopia after main Kiremt rains slacken.',
+        sourceUrl: 'https://www.researchgate.net/publication/283869084_Crop_water_requirement_determination_of_chickpea_in_the_central_vertisol_areas_of_Ethiopia_using_FAO_CROPWAT_model'
+      },
+      {
+        code: 'FABA_BEAN',
+        nameEn: 'Faba Bean',
+        nameAm: 'ባቄላ (Bakela)',
+        nameOm: 'Baaqelaa',
+        scientific: 'Vicia faba L.',
+        family: 'Fabaceae',
+        durationMin: 110,
+        durationMax: 145,
+        waterNeedMin: 350,
+        waterNeedMax: 500,
+        kcAvg: 0.79,
+        droughtSensitivity: 'Moderate (FAO Group 3)',
+        optPhMin: 5.8,
+        optPhMax: 7.5,
+        preferredSoils: ['Nitisol', 'Vertisol', 'Loam'],
+        nitrogenDemand: 'Low',
+        isNitrogenFixer: true,
+        rootDepth: 'Medium',
+        residueCover: 'Moderate',
+        forageValue: 'Moderate',
+        notes: 'High biological nitrogen fixation via Rhizobium leguminosarum; premier highland break crop before Wheat, Barley, or Teff. Sensitive to pH < 5.2.',
+        sourceUrl: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC6083270/'
+      },
+      {
+        code: 'FIELD_PEA',
+        nameEn: 'Field Pea',
+        nameAm: 'አተር (Ater)',
+        nameOm: 'Atara',
+        scientific: 'Pisum sativum L.',
+        family: 'Fabaceae',
+        durationMin: 90,
+        durationMax: 110,
+        waterNeedMin: 300,
+        waterNeedMax: 500,
+        kcAvg: 0.79,
+        droughtSensitivity: 'Moderate (FAO Group 3)',
+        optPhMin: 5.5,
+        optPhMax: 7.5,
+        preferredSoils: ['Nitisol', 'Loam'],
+        nitrogenDemand: 'Low',
+        isNitrogenFixer: true,
+        rootDepth: 'Medium',
+        residueCover: 'Moderate',
+        forageValue: 'Moderate',
+        notes: 'Short-duration legume (90–110 days per FAO Table 6) that restores soil nitrogen and breaks cereal root-disease cycles.',
+        sourceUrl: 'https://www.fao.org/4/u3160e/u3160e04.htm'
+      },
+      {
+        code: 'LENTIL',
+        nameEn: 'Lentil',
+        nameAm: 'ምስር (Misir)',
+        nameOm: 'Misira',
+        scientific: 'Lens culinaris Medik.',
+        family: 'Fabaceae',
+        durationMin: 95,
+        durationMax: 150,
+        waterNeedMin: 300,
+        waterNeedMax: 450,
+        kcAvg: 0.79,
+        droughtSensitivity: 'Low-Moderate',
+        optPhMin: 6.0,
+        optPhMax: 8.0,
+        preferredSoils: ['Vertisol', 'Loam', 'ClayLoam'],
+        nitrogenDemand: 'Low',
+        isNitrogenFixer: true,
+        rootDepth: 'Shallow',
+        residueCover: 'Low',
+        forageValue: 'Moderate',
+        notes: 'High-value nitrogen-fixing food legume; light canopy cover means slopes >8% require soil bunds to prevent sheet erosion.',
+        sourceUrl: 'https://www.fao.org/4/u3160e/u3160e04.htm'
+      }
+    ];
+
+    // Trilingual UI Dictionary (English, Amharic, Afaan Oromo)
+    var I18N_STRINGS = {
+      en: {
+        nav_dashboard: 'Dashboard',
+        nav_farms: 'Farms & Fields',
+        nav_weather: 'Weather Intelligence',
+        nav_sowing: '1. Sowing & Onset',
+        nav_harvesting: '2. Harvest Windows',
+        nav_threshing: '3. Threshing & Wind',
+        nav_maturity: '4. Maturity vs. Risk',
+        nav_rotation: '5. Crop Rotation',
+        nav_datasources: 'Data Sources',
+        nav_settings: 'Offline & Settings',
+        dash_decisions_heading: 'Active Agricultural Decision Support (5 Core Modules)',
+        suitable: 'Suitable',
+        risky: 'Risky',
+        insufficient: 'Insufficient evidence'
+      },
+      am: {
+        nav_dashboard: 'ዋና ዳሽቦርድ',
+        nav_farms: 'እርሻዎች እና ማሳዎች',
+        nav_weather: 'የአየር ንብረት መረጃ',
+        nav_sowing: '1. የዘር ወቅት እና ዝናብ',
+        nav_harvesting: '2. የአጨዳ ጊዜ',
+        nav_threshing: '3. የውቂያ እና ነፋስ',
+        nav_maturity: '4. የሰብል ብስለት እና አደጋ',
+        nav_rotation: '5. የሰብል ፈረቃ (Rotation)',
+        nav_datasources: 'የመረጃ ምንጮች (NASA)',
+        nav_settings: 'ኦፍላይን እና ቅንብሮች',
+        dash_decisions_heading: 'ዋና የግብርና ውሳኔ ድጋፍ ሞጁሎች (5 Modules)',
+        suitable: 'ተስማሚ (Suitable)',
+        risky: 'አደጋ ያለው (Risky)',
+        insufficient: 'በቂ መረጃ የለም (Insufficient)'
+      },
+      om: {
+        nav_dashboard: 'Gabatee Ijoo',
+        nav_farms: 'Ooyiruu fi Lafa Qonnaa',
+        nav_weather: 'Odeeffannoo Qilleensaa',
+        nav_sowing: '1. Yeroo Facaa\'iinsaa',
+        nav_harvesting: '2. Yeroo Haamaa',
+        nav_threshing: '3. DhahichaMidhaanii fi Qilleensa',
+        nav_maturity: '4. Bilchina Midhaanii',
+        nav_rotation: '5. Dabaree Midhaanii',
+        nav_datasources: 'Madda Ragaalee (NASA)',
+        nav_settings: 'Kuusaa Offline fi Qindaa\'ina',
+        dash_decisions_heading: 'Deeggarsa Murtoo Qonnaa (Moojuloota 5)',
+        suitable: 'Mijataa (Suitable)',
+        risky: 'Sodaachisaa (Risky)',
+        insufficient: 'Ragaa Gahaa Hin Qabu'
+      }
+    };
+
+    // ========================================================================
+    // 2. APPLICATION STATE & STORAGE
+    // ========================================================================
+    var appState = {
+      currentRoute: 'dashboard',
+      language: 'en',
+      simulatedOffline: false,
+      farms: [],
+      selectedFarmId: 'farm_adaa_bishoftu',
+      telemetryByFarmId: {},
+      queuedObservations: [],
+      sowingConfig: {
+        onsetWindowDays: 3,
+        onsetThresholdMm: 20,
+        wetDayThresholdMm: 1.0,
+        maxDrySpellDays: 7,
+        seasonMode: 'Kiremt'
+      },
+      threshingConfig: {
+        minWindMs: 2.5,
+        maxWindMs: 7.5,
+        maxRhPct: 65,
+        maxRainProbPct: 20
+      },
+      charts: {},
+      mapInstance: null,
+      mapMarker: null,
+      mapTileLayer: null
+    };
+
+    function safeSaveLocal(key, val) {
+      try {
+        localStorage.setItem(key, JSON.stringify(val));
+      } catch (e) {
+        // Ignore quota or sandbox errors
+      }
+    }
+
+    function safeLoadLocal(key, fallback) {
+      try {
+        var raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    }
+
+    function showToast(message, type) {
+      var container = document.getElementById('toastContainer');
+      if (!container) return;
+      var el = document.createElement('div');
+      var bg = type === 'error' ? 'bg-red-800 text-white' : type === 'warn' ? 'bg-amber-700 text-white' : 'bg-primary text-white';
+      el.className = 'pointer-events-auto px-3.5 py-2.5 rounded-lg shadow-lg text-xs font-medium flex items-center justify-between gap-2 transition ' + bg;
+      el.innerHTML = '<span>' + message + '</span>';
+      container.appendChild(el);
+      setTimeout(function() {
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+      }, 4200);
+    }
+
+    function getSelectedFarm() {
+      for (var i = 0; i < appState.farms.length; i++) {
+        if (appState.farms[i].id === appState.selectedFarmId) return appState.farms[i];
+      }
+      return appState.farms[0];
+    }
+
+    function getCropByCode(code) {
+      for (var i = 0; i < CROP_CATALOGUE.length; i++) {
+        if (CROP_CATALOGUE[i].code === code) return CROP_CATALOGUE[i];
+      }
+      return CROP_CATALOGUE[0];
+    }
+
+    // ========================================================================
+    // 3. LIVE NASA POWER & OPEN-METEO API INTEGRATION (ZERO FAKE DATA)
+    // ========================================================================
+    function formatDateYmd(dateObj) {
+      var y = dateObj.getUTCFullYear();
+      var m = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+      var d = String(dateObj.getUTCDate()).padStart(2, '0');
+      return '' + y + m + d;
+    }
+
+    function cleanNasaNum(v) {
+      if (v === undefined || v === null || isNaN(v) || Number(v) <= -990) return null;
+      return Number(Number(v).toFixed(2));
+    }
+
+    async function fetchLiveTelemetryForFarm(farm) {
+      var cacheKey = 'fieldshift_telemetry_' + farm.id;
+      var existingCache = safeLoadLocal(cacheKey, null);
+
+      if (appState.simulatedOffline || !navigator.onLine) {
+        if (existingCache) {
+          existingCache.isCachedOffline = true;
+          appState.telemetryByFarmId[farm.id] = existingCache;
+          updateProvenanceBanner(existingCache, farm);
+          renderAllActiveViews();
+          showToast('Offline Mode: Loaded cached NASA & forecast snapshot for ' + farm.name, 'warn');
+          return;
+        } else {
+          var unavail = {
+            nasaAvailable: false,
+            forecastAvailable: false,
+            isCachedOffline: true,
+            retrievedAt: null,
+            nasaError: 'Device is in Offline Mode and no prior telemetry snapshot was downloaded for this farm.',
+            forecastError: 'Device is in Offline Mode and no prior forecast snapshot was cached.',
+            observations: [],
+            forecastDaily: [],
+            forecastHourly: []
+          };
+          appState.telemetryByFarmId[farm.id] = unavail;
+          updateProvenanceBanner(unavail, farm);
+          renderAllActiveViews();
+          return;
+        }
+      }
+
+      // Compute 45-day window ending today (NASA POWER has 2-4 day final latency, which we clean properly)
+      var now = new Date();
+      var start = new Date(now.getTime() - 48 * 24 * 60 * 60 * 1000);
+      var startYmd = formatDateYmd(start);
+      var endYmd = formatDateYmd(now);
+
+      var nasaUrl = 'https://power.larc.nasa.gov/api/temporal/daily/point?parameters=PRECTOTCORR,T2M,T2M_MAX,T2M_MIN,RH2M,WS2M,ALLSKY_SFC_SW_DWN,GWETTOP,GWETROOT&community=AG&longitude=' +
+        Number(farm.longitude).toFixed(4) + '&latitude=' + Number(farm.latitude).toFixed(4) +
+        '&start=' + startYmd + '&end=' + endYmd + '&format=JSON';
+
+      var openMeteoUrl = 'https://api.open-meteo.com/v1/forecast?latitude=' +
+        Number(farm.latitude).toFixed(4) + '&longitude=' + Number(farm.longitude).toFixed(4) +
+        '&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,wind_speed_10m,wind_gusts_10m' +
+        '&daily=precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,wind_gusts_10m_max' +
+        '&wind_speed_unit=ms&timezone=Africa%2FAddis_Ababa&forecast_days=7';
+
+      var snapshot = {
+        nasaAvailable: false,
+        forecastAvailable: false,
+        isCachedOffline: false,
+        retrievedAt: new Date().toISOString(),
+        nasaEndpoint: nasaUrl,
+        forecastEndpoint: openMeteoUrl,
+        nasaError: null,
+        forecastError: null,
+        observations: [],
+        forecastDaily: [],
+        forecastHourly: []
+      };
+
+      // Fetch NASA POWER and Open-Meteo concurrently inside try/catch with explicit fallback state
+      var results = [];
+      try {
+        results = await Promise.allSettled([
+        fetch(nasaUrl, { headers: { Accept: 'application/json' } }).then(function(r) {
+          if (!r.ok) throw new Error('NASA POWER HTTP ' + r.status);
+          return r.json();
+        }),
+        fetch(openMeteoUrl, { headers: { Accept: 'application/json' } }).then(function(r) {
+          if (!r.ok) throw new Error('Open-Meteo HTTP ' + r.status);
+          return r.json();
+        })
+        ]);
+      } catch (netErr) {
+        results = [
+          { status: 'rejected', reason: netErr },
+          { status: 'rejected', reason: netErr }
+        ];
+      }
+
+      // Process NASA POWER result
+      if (results[0].status === 'fulfilled' && results[0].value && results[0].value.properties && results[0].value.properties.parameter) {
+        var param = results[0].value.properties.parameter;
+        var dates = Object.keys(param.PRECTOTCORR || {}).sort();
+        var obsList = [];
+        for (var i = 0; i < dates.length; i++) {
+          var ymd = dates[i];
+          var isoDate = ymd.slice(0, 4) + '-' + ymd.slice(4, 6) + '-' + ymd.slice(6, 8);
+          var pVal = cleanNasaNum(param.PRECTOTCORR ? param.PRECTOTCORR[ymd] : null);
+          var tMean = cleanNasaNum(param.T2M ? param.T2M[ymd] : null);
+          var tMax = cleanNasaNum(param.T2M_MAX ? param.T2M_MAX[ymd] : null);
+          var tMin = cleanNasaNum(param.T2M_MIN ? param.T2M_MIN[ymd] : null);
+          var rh = cleanNasaNum(param.RH2M ? param.RH2M[ymd] : null);
+          var ws = cleanNasaNum(param.WS2M ? param.WS2M[ymd] : null);
+          var sw = cleanNasaNum(param.ALLSKY_SFC_SW_DWN ? param.ALLSKY_SFC_SW_DWN[ymd] : null);
+          var gTop = cleanNasaNum(param.GWETTOP ? param.GWETTOP[ymd] : null);
+          var gRoot = cleanNasaNum(param.GWETROOT ? param.GWETROOT[ymd] : null);
+
+          // Keep days that have valid precipitation or temperature (filter trailing -999 latency days)
+          if (pVal !== null || tMean !== null) {
+            obsList.push({
+              date: isoDate,
+              precipMm: pVal,
+              tempMeanC: tMean,
+              tempMaxC: tMax,
+              tempMinC: tMin,
+              relHumidityPct: rh,
+              windSpeed2mMs: ws,
+              solarRadKwhM2: sw,
+              surfaceSoilWetness: gTop,
+              rootSoilWetness: gRoot
+            });
+          }
+        }
+        snapshot.nasaAvailable = obsList.length > 0;
+        snapshot.observations = obsList;
+      } else {
+        snapshot.nasaError = results[0].status === 'rejected' ? String(results[0].reason) : 'Invalid NASA POWER response';
+        if (existingCache && existingCache.observations && existingCache.observations.length > 0) {
+          snapshot.observations = existingCache.observations;
+          snapshot.nasaAvailable = true;
+          snapshot.isCachedOffline = true;
+        }
+      }
+
+      // Process Open-Meteo Forecast result
+      if (results[1].status === 'fulfilled' && results[1].value && results[1].value.daily) {
+        var dBlock = results[1].value.daily;
+        var hBlock = results[1].value.hourly || {};
+        var dailyArr = [];
+        for (var j = 0; j < (dBlock.time || []).length; j++) {
+          dailyArr.push({
+            date: dBlock.time[j],
+            precipSumMm: Number((dBlock.precipitation_sum[j] || 0).toFixed(1)),
+            precipProbMaxPct: Math.round(dBlock.precipitation_probability_max[j] || 0),
+            tempMaxC: Number((dBlock.temperature_2m_max[j] || 0).toFixed(1)),
+            tempMinC: Number((dBlock.temperature_2m_min[j] || 0).toFixed(1)),
+            windSpeedMaxMs: Number((dBlock.wind_speed_10m_max[j] || 0).toFixed(1)),
+            windGustsMaxMs: Number((dBlock.wind_gusts_10m_max[j] || 0).toFixed(1))
+          });
+        }
+        var hourlyArr = [];
+        for (var k = 0; k < (hBlock.time || []).length; k++) {
+          hourlyArr.push({
+            timestamp: hBlock.time[k],
+            temp2mC: Number((hBlock.temperature_2m[k] || 0).toFixed(1)),
+            relHumidity2mPct: Math.round(hBlock.relative_humidity_2m[k] || 0),
+            precipProbPct: Math.round(hBlock.precipitation_probability[k] || 0),
+            precipMm: Number((hBlock.precipitation[k] || 0).toFixed(2)),
+            windSpeed10mMs: Number((hBlock.wind_speed_10m[k] || 0).toFixed(1)),
+            windGusts10mMs: Number((hBlock.wind_gusts_10m[k] || 0).toFixed(1))
+          });
+        }
+        snapshot.forecastAvailable = dailyArr.length > 0;
+        snapshot.forecastDaily = dailyArr;
+        snapshot.forecastHourly = hourlyArr;
+      } else {
+        snapshot.forecastError = results[1].status === 'rejected' ? String(results[1].reason) : 'Invalid Open-Meteo response';
+        if (existingCache && existingCache.forecastDaily && existingCache.forecastDaily.length > 0) {
+          snapshot.forecastDaily = existingCache.forecastDaily;
+          snapshot.forecastHourly = existingCache.forecastHourly || [];
+          snapshot.forecastAvailable = true;
+          snapshot.isCachedOffline = true;
+        }
+      }
+
+      appState.telemetryByFarmId[farm.id] = snapshot;
+      if (snapshot.nasaAvailable || snapshot.forecastAvailable) {
+        safeSaveLocal(cacheKey, snapshot);
+      }
+      updateProvenanceBanner(snapshot, farm);
+      renderAllActiveViews();
+    }
+
+    function updateProvenanceBanner(snapshot, farm) {
+      var badge = document.getElementById('provenanceStateBadge');
+      var summary = document.getElementById('provenanceSummaryText');
+      var coords = document.getElementById('provenanceCoordLabel');
+      var ts = document.getElementById('provenanceTimestampLabel');
+
+      coords.textContent = 'Coords: ' + Number(farm.latitude).toFixed(4) + '°N, ' + Number(farm.longitude).toFixed(4) + '°E (' + farm.elevationMeters + 'm)';
+      ts.textContent = snapshot.retrievedAt ? 'Snapshot: ' + new Date(snapshot.retrievedAt).toLocaleString() : 'No cached snapshot';
+
+      if (appState.simulatedOffline) {
+        badge.className = 'px-2 py-0.5 rounded font-semibold badge-risky';
+        badge.textContent = 'OFFLINE SNAPSHOT';
+        summary.textContent = snapshot.nasaAvailable
+          ? 'Showing cached NASA POWER & Open-Meteo snapshot stored on device. Live network updates paused.'
+          : 'Offline Mode active with no cached telemetry for this farm. Showing documented station baselines only.';
+      } else if (snapshot.nasaAvailable && snapshot.forecastAvailable) {
+        badge.className = 'px-2 py-0.5 rounded font-semibold badge-suitable';
+        badge.textContent = 'LIVE NASA + FORECAST';
+        var lastObsDate = snapshot.observations[snapshot.observations.length - 1].date;
+        summary.textContent = 'Live NASA LaRC POWER (MERRA-2 daily thru ' + lastObsDate + ') + Open-Meteo 7-Day Forecast (Non-NASA) active.';
+      } else if (snapshot.nasaAvailable || snapshot.forecastAvailable) {
+        badge.className = 'px-2 py-0.5 rounded font-semibold badge-risky';
+        badge.textContent = 'PARTIAL LIVE FEED';
+        summary.textContent = 'One external provider responded; unavailable source explicitly flagged without synthetic replacement.';
+      } else {
+        badge.className = 'px-2 py-0.5 rounded font-semibold badge-insufficient';
+        badge.textContent = 'API UNREACHABLE';
+        summary.textContent = 'External NASA/Forecast APIs could not be reached from this browser session. Displaying documented Ethiopian research station baselines.';
+      }
+    }
+
+    // ========================================================================
+    // 4. DETERMINISTIC DECISION ENGINES (MODULE A & MODULE B)
+    // ========================================================================
+    function computeSowingDecision(farm, snapshot) {
+      var cfg = appState.sowingConfig;
+      var obs = (snapshot && snapshot.observations) ? snapshot.observations.filter(function(o) { return o.precipMm !== null; }) : [];
+      var fcDaily = (snapshot && snapshot.forecastDaily) ? snapshot.forecastDaily : [];
+
+      if (obs.length < 10) {
+        return {
+          status: 'INSUFFICIENT_EVIDENCE',
+          badgeClass: 'badge-insufficient',
+          stateLabel: I18N_STRINGS[appState.language].insufficient,
+          headline: 'Insufficient live NASA daily rainfall observations retrieved to verify onset.',
+          explanation: 'Live NASA POWER daily observations are currently unavailable or fewer than 10 valid days are cached. In accordance with FieldShift scientific integrity rules, onset is never guessed from fabricated data. Refer to the documented ' + farm.woreda + ' seasonal baseline (' + farm.documentedRainRange + ') and verify local rain gauge measurements.',
+          metrics: {
+            acc3d: '--',
+            acc14d: '--',
+            acc30d: '--',
+            wetDays14: '--',
+            currentDryDays: '--',
+            maxDrySpell30: '--',
+            forecast7dMm: fcDaily.length ? fcDaily.reduce(function(a, d) { return a + d.precipSumMm; }, 0).toFixed(1) : '--'
+          },
+          rollingSeries: []
+        };
+      }
+
+      var last30 = obs.slice(-30);
+      var last14 = obs.slice(-14);
+      var last3 = obs.slice(-cfg.onsetWindowDays);
+
+      var sumP = function(arr) {
+        return Number(arr.reduce(function(a, item) { return a + (item.precipMm || 0); }, 0).toFixed(1));
+      };
+
+      var acc3d = sumP(last3);
+      var acc14d = sumP(last14);
+      var acc30d = sumP(last30);
+      var wetDays14 = last14.filter(function(x) { return (x.precipMm || 0) >= cfg.wetDayThresholdMm; }).length;
+
+      var currentDryDays = 0;
+      for (var i = last30.length - 1; i >= 0; i--) {
+        if ((last30[i].precipMm || 0) < cfg.wetDayThresholdMm) currentDryDays++;
+        else break;
+      }
+
+      var maxDrySpell30 = 0;
+      var curDry = 0;
+      for (var j = 0; j < last30.length; j++) {
+        if ((last30[j].precipMm || 0) < cfg.wetDayThresholdMm) {
+          curDry++;
+          if (curDry > maxDrySpell30) maxDrySpell30 = curDry;
+        } else {
+          curDry = 0;
+        }
+      }
+
+      var rollingSeries = [];
+      var peak3dIn14 = 0;
+      for (var k = 0; k < last30.length; k++) {
+        var sliceStart = Math.max(0, k - (cfg.onsetWindowDays - 1));
+        var rSum = sumP(last30.slice(sliceStart, k + 1));
+        rollingSeries.push({ date: last30[k].date, rollingMm: rSum, dailyMm: last30[k].precipMm || 0 });
+        if (k >= last30.length - 14 && rSum > peak3dIn14) peak3dIn14 = rSum;
+      }
+
+      var fc7dMm = fcDaily.length ? Number(fcDaily.reduce(function(a, d) { return a + d.precipSumMm; }, 0).toFixed(1)) : null;
+
+      var isEstablished = peak3dIn14 >= cfg.onsetThresholdMm && wetDays14 >= 3 && currentDryDays <= cfg.maxDrySpellDays && (fc7dMm === null || fc7dMm >= 8.0);
+      var isPossible = !isEstablished && (peak3dIn14 >= cfg.onsetThresholdMm * 0.6 || acc14d >= cfg.onsetThresholdMm || (fc7dMm !== null && fc7dMm >= cfg.onsetThresholdMm));
+
+      if (isEstablished) {
+        return {
+          status: 'ONSET_ESTABLISHED',
+          badgeClass: 'badge-suitable',
+          stateLabel: I18N_STRINGS[appState.language].suitable + ' (Onset Established)',
+          headline: 'Onset Established — NASA rainfall criteria met with supportive 7-day forecast.',
+          explanation: 'Peak ' + cfg.onsetWindowDays + '-day NASA rainfall reached ' + peak3dIn14 + ' mm (threshold: ' + cfg.onsetThresholdMm + ' mm) with ' + wetDays14 + ' wet days in the past 14 days, ' + currentDryDays + ' current dry days, and ' + (fc7dMm !== null ? fc7dMm + ' mm' : 'N/A') + ' forecast over the next 7 days.',
+          metrics: { acc3d: acc3d, acc14d: acc14d, acc30d: acc30d, wetDays14: wetDays14, currentDryDays: currentDryDays, maxDrySpell30: maxDrySpell30, forecast7dMm: fc7dMm !== null ? fc7dMm : '--' },
+          rollingSeries: rollingSeries
+        };
+      } else if (isPossible) {
+        return {
+          status: 'POSSIBLE_ONSET',
+          badgeClass: 'badge-risky',
+          stateLabel: I18N_STRINGS[appState.language].risky + ' (Possible Onset)',
+          headline: 'Possible Onset — Some rainfall recorded, but dry-spell risk remains elevated.',
+          explanation: '14-day NASA rainfall is ' + acc14d + ' mm (peak 3-day: ' + peak3dIn14 + ' mm vs ' + cfg.onsetThresholdMm + ' mm threshold) with ' + currentDryDays + ' consecutive dry days and ' + (fc7dMm !== null ? fc7dMm + ' mm' : 'N/A') + ' forecast over the next 7 days. Wait for follow-up rainfall confirmation before sowing drought-sensitive crops.',
+          metrics: { acc3d: acc3d, acc14d: acc14d, acc30d: acc30d, wetDays14: wetDays14, currentDryDays: currentDryDays, maxDrySpell30: maxDrySpell30, forecast7dMm: fc7dMm !== null ? fc7dMm : '--' },
+          rollingSeries: rollingSeries
+        };
+      } else {
+        return {
+          status: 'ONSET_NOT_ESTABLISHED',
+          badgeClass: 'badge-risky',
+          stateLabel: I18N_STRINGS[appState.language].risky + ' (Onset Not Established)',
+          headline: 'Onset Not Established — Observed rainfall is below seasonal onset criteria.',
+          explanation: 'Observed 14-day NASA rainfall is ' + acc14d + ' mm across ' + wetDays14 + ' wet days (' + currentDryDays + ' consecutive dry days; max 30-day dry spell: ' + maxDrySpell30 + ' days). Rain-fed sowing now risks seed desiccation.',
+          metrics: { acc3d: acc3d, acc14d: acc14d, acc30d: acc30d, wetDays14: wetDays14, currentDryDays: currentDryDays, maxDrySpell30: maxDrySpell30, forecast7dMm: fc7dMm !== null ? fc7dMm : '--' },
+          rollingSeries: rollingSeries
+        };
+      }
+    }
+
+    function computeHarvestDecision(snapshot) {
+      var fcDaily = (snapshot && snapshot.forecastDaily) ? snapshot.forecastDaily : [];
+      var obs = (snapshot && snapshot.observations) ? snapshot.observations.filter(function(o) { return o.precipMm !== null; }) : [];
+      var recent7Mm = obs.length >= 7 ? Number(obs.slice(-7).reduce(function(a, x) { return a + (x.precipMm || 0); }, 0).toFixed(1)) : null;
+
+      if (fcDaily.length < 3) {
+        return {
+          stateLabel: I18N_STRINGS[appState.language].insufficient,
+          badgeClass: 'badge-insufficient',
+          headline: 'Operational 7-day forecast unavailable for harvest window ranking.',
+          recent7Mm: recent7Mm,
+          windows: []
+        };
+      }
+
+      var windows = [];
+      for (var i = 0; i <= fcDaily.length - 3; i++) {
+        var slice = fcDaily.slice(i, i + 3);
+        var maxProb = Math.max(slice[0].precipProbMaxPct, slice[1].precipProbMaxPct, slice[2].precipProbMaxPct);
+        var sumRain = Number((slice[0].precipSumMm + slice[1].precipSumMm + slice[2].precipSumMm).toFixed(1));
+        var avgMaxT = Number(((slice[0].tempMaxC + slice[1].tempMaxC + slice[2].tempMaxC) / 3).toFixed(1));
+        var ok = maxProb <= 30 && sumRain <= 2.0;
+        windows.push({
+          label: slice[0].date + ' → ' + slice[2].date,
+          maxProb: maxProb,
+          sumRain: sumRain,
+          avgMaxT: avgMaxT,
+          suitable: ok,
+          badgeClass: ok ? 'badge-suitable' : 'badge-risky',
+          stateText: ok ? I18N_STRINGS[appState.language].suitable : I18N_STRINGS[appState.language].risky
+        });
+      }
+
+      var best = windows.find(function(w) { return w.suitable; });
+      return {
+        stateLabel: best ? I18N_STRINGS[appState.language].suitable : I18N_STRINGS[appState.language].risky,
+        badgeClass: best ? 'badge-suitable' : 'badge-risky',
+        headline: best
+          ? 'Low-risk 3-day harvest window available (' + best.label + ': ' + best.sumRain + ' mm expected, max ' + best.maxProb + '% rain prob).'
+          : 'Elevated rainfall probability across upcoming 3-day windows — prepare waterproof tarpaulins before cutting.',
+        recent7Mm: recent7Mm,
+        windows: windows
+      };
+    }
+
+    function computeThreshingSlots(snapshot) {
+      var hourly = (snapshot && snapshot.forecastHourly) ? snapshot.forecastHourly : [];
+      var cfg = appState.threshingConfig;
+      if (hourly.length < 24) return { available: false, slots: [] };
+
+      var groups = {};
+      var orderKeys = [];
+      var limit = Math.min(hourly.length, 72);
+      for (var i = 0; i < limit; i++) {
+        var pt = hourly[i];
+        var parts = pt.timestamp.split('T');
+        var dStr = parts[0];
+        var hr = parseInt((parts[1] || '00').slice(0, 2), 10);
+        var pName = null;
+        if (hr >= 6 && hr < 12) pName = 'Morning (06:00–11:59)';
+        else if (hr >= 12 && hr < 18) pName = 'Afternoon (12:00–17:59)';
+        else if (hr >= 18 && hr < 22) pName = 'Evening (18:00–21:59)';
+        if (!pName) continue;
+
+        var key = dStr + '__' + pName;
+        if (!groups[key]) {
+          groups[key] = { date: dStr, period: pName, pts: [] };
+          orderKeys.push(key);
+        }
+        groups[key].pts.push(pt);
+      }
+
+      var slots = [];
+      for (var j = 0; j < orderKeys.length; j++) {
+        var g = groups[orderKeys[j]];
+        var pts = g.pts;
+        var maxProb = Math.max.apply(null, pts.map(function(p) { return p.precipProbPct; }));
+        var sumRain = Number(pts.reduce(function(a, p) { return a + p.precipMm; }, 0).toFixed(2));
+        var avgWind = Number((pts.reduce(function(a, p) { return a + p.windSpeed10mMs; }, 0) / pts.length).toFixed(1));
+        var maxGust = Number(Math.max.apply(null, pts.map(function(p) { return p.windGusts10mMs; })).toFixed(1));
+        var avgRh = Math.round(pts.reduce(function(a, p) { return a + p.relHumidity2mPct; }, 0) / pts.length);
+        var avgTemp = Number((pts.reduce(function(a, p) { return a + p.temp2mC; }, 0) / pts.length).toFixed(1));
+
+        var dryOk = maxProb <= cfg.maxRainProbPct && sumRain === 0 && avgRh <= cfg.maxRhPct;
+        var windOk = avgWind >= cfg.minWindMs && avgWind <= cfg.maxWindMs;
+        var bothOk = dryOk && windOk;
+
+        var note = '';
+        if (!dryOk) {
+          note = 'Drying Risk: Rain prob ' + maxProb + '% (' + sumRain + ' mm) or humidity ' + avgRh + '% > ' + cfg.maxRhPct + '% limit.';
+        } else if (avgWind < cfg.minWindMs) {
+          note = 'Good for threshing/trampling, but wind (' + avgWind + ' m/s) is below provisional ' + cfg.minWindMs + ' m/s winnowing threshold.';
+        } else if (avgWind > cfg.maxWindMs) {
+          note = 'Wind (' + avgWind + ' m/s, gusts ' + maxGust + ' m/s) exceeds ' + cfg.maxWindMs + ' m/s ceiling — grain scatter loss risk.';
+        } else {
+          note = 'Optimal for both drying (' + avgRh + '% RH) and winnowing separation (' + avgWind + ' m/s steady wind).';
+        }
+
+        slots.push({
+          date: g.date,
+          period: g.period,
+          maxProb: maxProb,
+          sumRain: sumRain,
+          avgWind: avgWind,
+          maxGust: maxGust,
+          avgRh: avgRh,
+          avgTemp: avgTemp,
+          dryOk: dryOk,
+          windOk: windOk,
+          bothOk: bothOk,
+          badgeClass: bothOk ? 'badge-suitable' : 'badge-risky',
+          stateLabel: bothOk ? I18N_STRINGS[appState.language].suitable : I18N_STRINGS[appState.language].risky,
+          note: note
+        });
+      }
+
+      return { available: true, slots: slots };
+    }
+
+    // ========================================================================
+    // 5. RENDERING ALL 10 VIEWS
+    // ========================================================================
+    function populateFarmSelector() {
+      var sel = document.getElementById('globalFarmSelect');
+      if (!sel) return;
+      sel.innerHTML = '';
+      for (var i = 0; i < appState.farms.length; i++) {
+        var f = appState.farms[i];
+        var opt = document.createElement('option');
+        opt.value = f.id;
+        opt.textContent = f.name + ' (' + f.woreda + ')';
+        if (f.id === appState.selectedFarmId) opt.selected = true;
+        sel.appendChild(opt);
+      }
+      var countBadge = document.getElementById('farmCountBadge');
+      if (countBadge) countBadge.textContent = String(appState.farms.length);
+    }
+
+    function renderDashboardView() {
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      var snap = appState.telemetryByFarmId[farm.id] || {};
+      var obs = (snap.observations || []).filter(function(o) { return o.precipMm !== null; });
+      var fcDaily = snap.forecastDaily || [];
+
+      document.getElementById('dashFarmZoneBadge').textContent = farm.zone + ' • ' + farm.region;
+      document.getElementById('dashFarmElevationBadge').textContent = 'Elevation: ' + farm.elevationMeters + ' m a.s.l. • Slope: ' + farm.slopePercent + '%';
+      document.getElementById('dashFarmTitle').textContent = farm.name;
+      document.getElementById('dashFarmerName').textContent = farm.farmerName;
+      document.getElementById('dashFieldName').textContent = farm.fieldTitle + ' • Soil: ' + farm.soilType;
+
+      // Top 4 KPIs
+      if (obs.length >= 14) {
+        var r14 = obs.slice(-14).reduce(function(a, o) { return a + (o.precipMm || 0); }, 0).toFixed(1);
+        var wet14 = obs.slice(-14).filter(function(o) { return (o.precipMm || 0) >= 1.0; }).length;
+        document.getElementById('dashKpiRain14').textContent = r14 + ' mm';
+        document.getElementById('dashKpiRainSub').textContent = wet14 + ' wet days (≥1 mm) in last 14d';
+      } else {
+        document.getElementById('dashKpiRain14').textContent = 'Unavailable';
+        document.getElementById('dashKpiRainSub').textContent = 'Awaiting live NASA POWER sync';
+      }
+
+      if (fcDaily.length > 0) {
+        var fcSum = fcDaily.reduce(function(a, d) { return a + d.precipSumMm; }, 0).toFixed(1);
+        var maxP = Math.max.apply(null, fcDaily.map(function(d) { return d.precipProbMaxPct; }));
+        document.getElementById('dashKpiForecast7').textContent = fcSum + ' mm';
+        document.getElementById('dashKpiForecastSub').textContent = 'Peak daily probability: ' + maxP + '%';
+      } else {
+        document.getElementById('dashKpiForecast7').textContent = 'Unavailable';
+        document.getElementById('dashKpiForecastSub').textContent = 'Forecast API unreachable';
+      }
+
+      var latestObs = obs.length > 0 ? obs[obs.length - 1] : null;
+      if (latestObs && latestObs.tempMeanC !== null) {
+        document.getElementById('dashKpiTempRh').textContent = latestObs.tempMeanC + ' °C / ' + (latestObs.relHumidityPct !== null ? latestObs.relHumidityPct + '%' : '--');
+        document.getElementById('dashKpiTempSub').textContent = 'NASA POWER (' + latestObs.date + ')';
+      } else {
+        document.getElementById('dashKpiTempRh').textContent = '-- °C / --%';
+        document.getElementById('dashKpiTempSub').textContent = 'Baseline: ' + farm.documentedTempRange;
+      }
+
+      if (latestObs && latestObs.rootSoilWetness !== null) {
+        var rw = latestObs.rootSoilWetness;
+        var swLabel = rw < 0.30 ? 'Deficit' : rw > 0.80 ? 'High/Wet' : 'Moderate';
+        document.getElementById('dashKpiSoilWet').textContent = rw.toFixed(2) + ' (' + swLabel + ')';
+        document.getElementById('dashKpiSoilSub').textContent = 'Surface GWETTOP: ' + (latestObs.surfaceSoilWetness !== null ? latestObs.surfaceSoilWetness.toFixed(2) : '--');
+      } else {
+        document.getElementById('dashKpiSoilWet').textContent = 'Unavailable';
+        document.getElementById('dashKpiSoilSub').textContent = 'NASA latency / verify in field';
+      }
+
+      // 5 Core Decision Summary Cards
+      var sowingDec = computeSowingDecision(farm, snap);
+      var harvestDec = computeHarvestDecision(snap);
+      var threshDec = computeThreshingSlots(snap);
+      var bestThresh = threshDec.slots.find(function(s) { return s.bothOk; });
+      var currentCropObj = getCropByCode(farm.currentCropCode);
+
+      var cardsHtml = [
+        {
+          route: 'sowing',
+          num: 'Module A.1',
+          title: 'Sowing & Rainfall Onset',
+          badgeClass: sowingDec.badgeClass,
+          badgeText: sowingDec.stateLabel,
+          desc: sowingDec.headline,
+          meta: '14d NASA Rain: ' + sowingDec.metrics.acc14d + ' mm • Dry spell: ' + sowingDec.metrics.currentDryDays + 'd'
+        },
+        {
+          route: 'harvesting',
+          num: 'Module A.2',
+          title: 'Harvesting Weather Window',
+          badgeClass: harvestDec.badgeClass,
+          badgeText: harvestDec.stateLabel,
+          desc: harvestDec.headline,
+          meta: '7d NASA Observed: ' + (harvestDec.recent7Mm !== null ? harvestDec.recent7Mm + ' mm' : '--')
+        },
+        {
+          route: 'threshing',
+          num: 'Module A.3',
+          title: 'Threshing & Winnowing',
+          badgeClass: bestThresh ? 'badge-suitable' : (threshDec.available ? 'badge-risky' : 'badge-insufficient'),
+          badgeText: bestThresh ? I18N_STRINGS[appState.language].suitable : (threshDec.available ? I18N_STRINGS[appState.language].risky : I18N_STRINGS[appState.language].insufficient),
+          desc: bestThresh
+            ? 'Next suitable window: ' + bestThresh.date + ' ' + bestThresh.period + ' (' + bestThresh.avgWind + ' m/s wind, ' + bestThresh.avgRh + '% RH).'
+            : 'Check sub-daily Morning/Afternoon/Evening wind and humidity trade-offs.',
+          meta: 'Provisional wind window: ' + appState.threshingConfig.minWindMs + '–' + appState.threshingConfig.maxWindMs + ' m/s'
+        },
+        {
+          route: 'maturity',
+          num: 'Module A.4',
+          title: 'Crop Maturity vs. Rain Risk',
+          badgeClass: 'badge-risky',
+          badgeText: 'Two-Axis Check',
+          desc: 'Active crop: ' + currentCropObj.nameEn + ' (' + currentCropObj.durationMin + '–' + currentCropObj.durationMax + 'd reference duration). Verify kernel hardness before bulk storage.',
+          meta: 'Planted: ' + farm.plantingDate
+        },
+        {
+          route: 'rotation',
+          num: 'Module B',
+          title: 'Crop Rotation Planner',
+          badgeClass: 'badge-suitable',
+          badgeText: '4 Scenarios Ready',
+          desc: 'Current sequence: ' + farm.previousCropCode + ' → ' + farm.currentCropCode + '. Compare Soil-Health N-fixing legume break vs. Water-Resilience rotations.',
+          meta: 'Soil: ' + farm.soilType + ' (pH ' + (farm.soilPh || 'unknown') + ')'
+        }
+      ].map(function(c) {
+        return '<div class="bg-surface rounded-xl border border-brand p-4 shadow-sm flex flex-col justify-between hover:border-emerald-700 transition">' +
+          '<div>' +
+            '<div class="flex items-center justify-between gap-2 mb-2">' +
+              '<span class="text-[11px] font-bold uppercase tracking-wider text-primary-brand">' + c.num + '</span>' +
+              '<span class="text-[11px] px-2.5 py-0.5 rounded-full font-semibold ' + c.badgeClass + '">' + c.badgeText + '</span>' +
+            '</div>' +
+            '<h3 class="font-bold text-base text-slate-900">' + c.title + '</h3>' +
+            '<p class="text-xs text-slate-700 mt-1.5 leading-relaxed">' + c.desc + '</p>' +
+          '</div>' +
+          '<div class="mt-4 pt-3 border-t border-brand flex items-center justify-between text-xs">' +
+            '<span class="text-muted-brand truncate">' + c.meta + '</span>' +
+            '<button type="button" onclick="navigateToRoute(\'' + c.route + '\')" class="font-semibold text-primary-brand hover:underline shrink-0 ml-2">Open →</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      document.getElementById('dashboardDecisionCardsGrid').innerHTML = cardsHtml;
+
+      // Documented Station Baseline Box
+      document.getElementById('dashStationBaselineBox').innerHTML =
+        '<div class="p-2.5 rounded bg-app border border-brand"><span class="font-semibold text-slate-800">Research Cluster:</span> ' + farm.name + ' (' + farm.woreda + ')</div>' +
+        '<div class="p-2.5 rounded bg-app border border-brand"><span class="font-semibold text-slate-800">Documented Annual Rainfall:</span> ' + farm.documentedRainRange + '</div>' +
+        '<div class="p-2.5 rounded bg-app border border-brand"><span class="font-semibold text-slate-800">Temperature Regime:</span> ' + farm.documentedTempRange + '</div>' +
+        '<div class="p-2.5 rounded bg-app border border-brand"><span class="font-semibold text-slate-800">Dominant Soils:</span> ' + farm.documentedSoils + '</div>' +
+        '<div class="p-2.5 rounded bg-app border border-brand"><span class="font-semibold text-slate-800">Scientific Citation:</span> <a href="' + farm.baselineUrl + '" target="_blank" rel="noopener noreferrer" class="text-primary-brand underline">' + farm.baselineCitation + '</a></div>';
+
+      // Render Combined Rainfall Chart
+      var labels = [];
+      var nasaData = [];
+      var fcData = [];
+
+      var recent14 = obs.slice(-14);
+      for (var i = 0; i < recent14.length; i++) {
+        labels.push(recent14[i].date.slice(5));
+        nasaData.push(recent14[i].precipMm);
+        fcData.push(null);
+      }
+      for (var j = 0; j < fcDaily.length; j++) {
+        labels.push(fcDaily[j].date.slice(5) + ' (Fc)');
+        nasaData.push(null);
+        fcData.push(fcDaily[j].precipSumMm);
+      }
+
+      renderOrUpdateChart('dashCombinedRainChart', {
+        type: 'bar',
+        data: {
+          labels: labels.length ? labels : ['No Live Telemetry Cached'],
+          datasets: [
+            {
+              label: 'NASA POWER Observed Rainfall (mm/d)',
+              data: nasaData.length ? nasaData : [0],
+              backgroundColor: '#245B3C',
+              borderRadius: 4
+            },
+            {
+              label: 'Open-Meteo Forecast Rainfall (Non-NASA, mm/d)',
+              data: fcData.length ? fcData : [0],
+              backgroundColor: '#A66B45',
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
+          },
+          scales: {
+            y: { beginAtZero: true, title: { display: true, text: 'Precipitation (mm/day)' } }
+          }
+        }
+      });
+    }
+
+    function renderFarmsView() {
+      var listEl = document.getElementById('registeredFarmsList');
+      if (!listEl) return;
+      listEl.innerHTML = appState.farms.map(function(f) {
+        var isSel = f.id === appState.selectedFarmId;
+        return '<div class="p-3 rounded-lg border ' + (isSel ? 'border-emerald-700 bg-primary-light' : 'border-brand bg-app') + ' flex flex-col justify-between text-xs">' +
+          '<div>' +
+            '<div class="flex items-center justify-between gap-1">' +
+              '<span class="font-bold text-slate-900">' + f.name + '</span>' +
+              (isSel ? '<span class="px-2 py-0.5 rounded bg-primary text-white text-[10px] font-semibold">Active</span>' : '') +
+            '</div>' +
+            '<p class="text-muted-brand mt-0.5">' + f.woreda + ', ' + f.zone + ' (' + f.region + ')</p>' +
+            '<p class="font-mono text-[11px] text-slate-700 mt-1">' + Number(f.latitude).toFixed(4) + '°N, ' + Number(f.longitude).toFixed(4) + '°E • ' + f.elevationMeters + 'm</p>' +
+            '<p class="text-[11px] text-slate-700 mt-0.5">Crop: <strong>' + f.currentCropCode + '</strong> (Prev: ' + f.previousCropCode + ') • Soil: ' + f.soilType + '</p>' +
+          '</div>' +
+          '<div class="mt-2.5 pt-2 border-t border-brand flex items-center justify-between">' +
+            '<button type="button" onclick="handleGlobalFarmChange(\'' + f.id + '\')" class="font-semibold text-primary-brand hover:underline">Select Farm</button>' +
+            '<button type="button" onclick="loadFarmIntoForm(\'' + f.id + '\')" class="text-muted-brand hover:text-slate-900">Load into Editor</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      initOrUpdateLeafletMap();
+    }
+
+    function initOrUpdateLeafletMap() {
+      var container = document.getElementById('farmMapContainer');
+      if (!container || typeof L === 'undefined') return;
+      var farm = getSelectedFarm();
+      if (!farm) return;
+
+      if (!appState.mapInstance) {
+        appState.mapInstance = L.map('farmMapContainer').setView([farm.latitude, farm.longitude], 7);
+        appState.mapTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+          attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase',
+          maxZoom: 18
+        }).addTo(appState.mapInstance);
+
+        appState.mapMarker = L.marker([farm.latitude, farm.longitude]).addTo(appState.mapInstance)
+          .bindPopup('<strong>' + farm.name + '</strong><br/>' + farm.woreda + ' (' + farm.latitude.toFixed(4) + '°N, ' + farm.longitude.toFixed(4) + '°E)');
+
+        appState.mapInstance.on('click', function(e) {
+          var lat = Number(e.latlng.lat.toFixed(4));
+          var lon = Number(e.latlng.lng.toFixed(4));
+          document.getElementById('inputLat').value = String(lat);
+          document.getElementById('inputLon').value = String(lon);
+          if (appState.mapMarker) {
+            appState.mapMarker.setLatLng([lat, lon]).bindPopup('Selected Map Location: ' + lat + '°N, ' + lon + '°E').openPopup();
+          }
+          showToast('Coordinates updated from map: ' + lat + '°N, ' + lon + '°E', 'info');
+        });
+      } else {
+        appState.mapInstance.invalidateSize();
+        appState.mapInstance.setView([farm.latitude, farm.longitude], 8);
+        if (appState.mapMarker) {
+          appState.mapMarker.setLatLng([farm.latitude, farm.longitude])
+            .bindPopup('<strong>' + farm.name + '</strong><br/>' + farm.woreda + ' (' + Number(farm.latitude).toFixed(4) + '°N, ' + Number(farm.longitude).toFixed(4) + '°E)');
+        }
+      }
+    }
+
+    function switchMapTileLayer(mode) {
+      if (!appState.mapInstance || typeof L === 'undefined') return;
+      if (appState.mapTileLayer) appState.mapInstance.removeLayer(appState.mapTileLayer);
+      var url = mode === 'sat'
+        ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+        : 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}';
+      appState.mapTileLayer = L.tileLayer(url, { maxZoom: 18 }).addTo(appState.mapInstance);
+      document.getElementById('btnMapLayerTopo').className = mode === 'topo' ? 'px-2 py-1 rounded bg-primary text-white font-medium' : 'px-2 py-1 rounded bg-app border border-brand font-medium';
+      document.getElementById('btnMapLayerSat').className = mode === 'sat' ? 'px-2 py-1 rounded bg-primary text-white font-medium' : 'px-2 py-1 rounded bg-app border border-brand font-medium';
+    }
+
+    function renderWeatherView() {
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      var snap = appState.telemetryByFarmId[farm.id] || {};
+      var obs = (snap.observations || []).filter(function(o) { return o.precipMm !== null || o.tempMeanC !== null; });
+      var fcDaily = snap.forecastDaily || [];
+
+      document.getElementById('weatherViewCoordBadge').textContent = farm.name + ' (' + Number(farm.latitude).toFixed(4) + '°N, ' + Number(farm.longitude).toFixed(4) + '°E)';
+      document.getElementById('forecastUpdatedTimestamp').textContent = snap.retrievedAt ? 'Retrieved: ' + new Date(snap.retrievedAt).toLocaleTimeString() : 'Unavailable';
+
+      var last30 = obs.slice(-30);
+      renderOrUpdateChart('weatherNasaHistoryChart', {
+        type: 'bar',
+        data: {
+          labels: last30.map(function(o) { return o.date.slice(5); }),
+          datasets: [
+            {
+              type: 'bar',
+              label: 'NASA POWER Precip (PRECTOTCORR, mm/d)',
+              data: last30.map(function(o) { return o.precipMm; }),
+              backgroundColor: '#245B3C',
+              yAxisID: 'y'
+            },
+            {
+              type: 'line',
+              label: 'Max Temp (T2M_MAX, °C)',
+              data: last30.map(function(o) { return o.tempMaxC; }),
+              borderColor: '#A66B45',
+              tension: 0.25,
+              yAxisID: 'y1'
+            },
+            {
+              type: 'line',
+              label: 'Min Temp (T2M_MIN, °C)',
+              data: last30.map(function(o) { return o.tempMinC; }),
+              borderColor: '#829B77',
+              tension: 0.25,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, position: 'left', title: { display: true, text: 'Rainfall (mm)' } },
+            y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Temp (°C)' } }
+          }
+        }
+      });
+
+      renderOrUpdateChart('weatherSoilMoistureChart', {
+        type: 'line',
+        data: {
+          labels: last30.map(function(o) { return o.date.slice(5); }),
+          datasets: [
+            {
+              label: 'Root-Zone Wetness (GWETROOT, 0–1)',
+              data: last30.map(function(o) { return o.rootSoilWetness; }),
+              borderColor: '#245B3C',
+              backgroundColor: 'rgba(36, 91, 60, 0.12)',
+              fill: true,
+              tension: 0.3,
+              yAxisID: 'y'
+            },
+            {
+              label: 'Surface Wetness (GWETTOP, 0–1)',
+              data: last30.map(function(o) { return o.surfaceSoilWetness; }),
+              borderColor: '#A66B45',
+              borderDash: [4, 4],
+              tension: 0.3,
+              yAxisID: 'y'
+            },
+            {
+              label: 'Relative Humidity (RH2M, %)',
+              data: last30.map(function(o) { return o.relHumidityPct; }),
+              borderColor: '#748077',
+              tension: 0.2,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { min: 0, max: 1, position: 'left', title: { display: true, text: 'Wetness Fraction (0–1)' } },
+            y1: { min: 0, max: 100, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'RH (%)' } }
+          }
+        }
+      });
+
+      var tbody = document.getElementById('weatherForecastTableBody');
+      if (fcDaily.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="py-4 px-3 text-center text-muted-brand">Live Open-Meteo forecast unavailable. Never replaced with fabricated forecast rows.</td></tr>';
+      } else {
+        tbody.innerHTML = fcDaily.map(function(d) {
+          var risk = d.precipProbMaxPct >= 50 || d.precipSumMm >= 5.0;
+          return '<tr class="hover:bg-app">' +
+            '<td class="py-2 px-3 font-mono font-medium">' + d.date + '</td>' +
+            '<td class="py-2 px-3 text-right font-semibold">' + d.precipProbMaxPct + '%</td>' +
+            '<td class="py-2 px-3 text-right font-mono">' + d.precipSumMm + ' mm</td>' +
+            '<td class="py-2 px-3 text-right font-mono">' + d.tempMinC + '° / ' + d.tempMaxC + '°C</td>' +
+            '<td class="py-2 px-3 text-right font-mono">' + d.windSpeedMaxMs + ' m/s</td>' +
+            '<td class="py-2 px-3 text-right font-mono">' + d.windGustsMaxMs + ' m/s</td>' +
+            '<td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold ' + (risk ? 'badge-risky' : 'badge-suitable') + '">' +
+              (risk ? 'Rain Exposure Risk' : 'Low Rain Window') + '</span></td>' +
+          '</tr>';
+        }).join('');
+      }
+    }
+
+    function renderSowingView() {
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      var snap = appState.telemetryByFarmId[farm.id] || {};
+      var dec = computeSowingDecision(farm, snap);
+
+      var badge = document.getElementById('sowingDecisionBadge');
+      badge.className = 'px-3 py-1 rounded-full text-xs font-bold ' + dec.badgeClass;
+      badge.textContent = dec.stateLabel;
+
+      document.getElementById('sowingMainExplanationBox').innerHTML =
+        '<div class="font-bold text-sm sm:text-base text-slate-900">' + dec.headline + '</div>' +
+        '<p class="text-xs sm:text-sm text-slate-800 leading-relaxed">' + dec.explanation + '</p>' +
+        '<div class="text-[11px] text-muted-brand pt-1"><strong>Data Provenance:</strong> Historical &amp; recent precipitation from NASA LaRC POWER (<code class="font-mono">PRECTOTCORR</code>, 0.5°×0.625°); 7-day future outlook from Open-Meteo (External Non-NASA Forecast).</div>';
+
+      var m = dec.metrics;
+      var kpis = [
+        { label: 'Last 3d NASA Rain', val: m.acc3d + ' mm' },
+        { label: 'Last 14d NASA Rain', val: m.acc14d + ' mm' },
+        { label: 'Last 30d NASA Rain', val: m.acc30d + ' mm' },
+        { label: 'Wet Days (14d)', val: String(m.wetDays14) },
+        { label: 'Current Dry Spell', val: m.currentDryDays + ' days' },
+        { label: '7d Forecast Rain', val: m.forecast7dMm + ' mm' }
+      ];
+      document.getElementById('sowingMetricsStrip').innerHTML = kpis.map(function(k) {
+        return '<div class="p-2.5 rounded-lg bg-app border border-brand">' +
+          '<div class="text-[11px] text-muted-brand">' + k.label + '</div>' +
+          '<div class="text-base font-bold text-slate-900 mt-0.5">' + k.val + '</div>' +
+        '</div>';
+      }).join('');
+
+      document.getElementById('sowingRisksList').innerHTML =
+        '<li><strong>False Onset Risk:</strong> Early isolated showers can moisten the top 2–3 cm of soil while deeper layers remain dry. If followed by a >' + appState.sowingConfig.maxDrySpellDays + '-day dry spell, germinating seeds desiccate.</li>' +
+        '<li><strong>Observed ≠ Future Forecast:</strong> NASA POWER and GPM IMERG measure rainfall that has already fallen; always cross-check the 7-day operational forecast before sowing.</li>' +
+        '<li><strong>Physical Soil Check:</strong> Verify moist soil to at least 10–15 cm depth in the field before broadcasting Teff or row-planting Maize/Wheat.</li>';
+
+      document.getElementById('sowingHistoricalRefText').textContent =
+        farm.name + ' (' + farm.woreda + '): ' + farm.documentedRainRange + '. Source: ' + farm.baselineCitation + '.';
+
+      var series = dec.rollingSeries || [];
+      renderOrUpdateChart('sowingAccumulationChart', {
+        type: 'bar',
+        data: {
+          labels: series.map(function(s) { return s.date.slice(5); }),
+          datasets: [
+            {
+              type: 'line',
+              label: 'Rolling 3-Day Accumulation (mm)',
+              data: series.map(function(s) { return s.rollingMm; }),
+              borderColor: '#245B3C',
+              backgroundColor: 'rgba(36, 91, 60, 0.15)',
+              fill: true,
+              tension: 0.25
+            },
+            {
+              type: 'line',
+              label: 'Configured Onset Threshold (' + appState.sowingConfig.onsetThresholdMm + ' mm)',
+              data: series.map(function() { return appState.sowingConfig.onsetThresholdMm; }),
+              borderColor: '#B94A48',
+              borderDash: [5, 5],
+              pointRadius: 0
+            },
+            {
+              type: 'bar',
+              label: 'Daily NASA Precip (mm)',
+              data: series.map(function(s) { return s.dailyMm; }),
+              backgroundColor: '#829B77'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, title: { display: true, text: 'Rainfall (mm)' } }
+          }
+        }
+      });
+    }
+
+    function renderHarvestingView() {
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      var snap = appState.telemetryByFarmId[farm.id] || {};
+      var dec = computeHarvestDecision(snap);
+      var fcDaily = snap.forecastDaily || [];
+
+      var badge = document.getElementById('harvestDecisionBadge');
+      badge.className = 'px-3 py-1 rounded-full text-xs font-bold ' + dec.badgeClass;
+      badge.textContent = dec.stateLabel;
+
+      document.getElementById('harvestSummaryBanner').innerHTML =
+        '<div class="font-bold text-slate-900">' + dec.headline + '</div>' +
+        '<p class="text-slate-800 mt-1">These upcoming periods have comparatively lower forecast rainfall risk. Check crop maturity and local field conditions before harvesting. Recent 7-day NASA observed rainfall at this location: <strong>' +
+        (dec.recent7Mm !== null ? dec.recent7Mm + ' mm' : 'Unavailable') + '</strong>.</p>';
+
+      var listEl = document.getElementById('harvestRollingWindowsList');
+      if (dec.windows.length === 0) {
+        listEl.innerHTML = '<div class="p-3 rounded bg-app border border-brand text-xs text-muted-brand">No operational forecast windows available.</div>';
+      } else {
+        listEl.innerHTML = dec.windows.map(function(w) {
+          return '<div class="p-3 rounded-lg bg-app border border-brand flex items-center justify-between gap-2 text-xs">' +
+            '<div>' +
+              '<div class="font-bold text-slate-900 font-mono">' + w.label + '</div>' +
+              '<div class="text-muted-brand mt-0.5">Max Rain Prob: <strong>' + w.maxProb + '%</strong> • Total Rain: <strong>' + w.sumRain + ' mm</strong> • Avg Max Temp: ' + w.avgMaxT + '°C</div>' +
+            '</div>' +
+            '<span class="px-2.5 py-1 rounded-full font-semibold shrink-0 ' + w.badgeClass + '">' + w.stateText + '</span>' +
+          '</div>';
+        }).join('');
+      }
+
+      renderOrUpdateChart('harvestWindowChart', {
+        type: 'bar',
+        data: {
+          labels: fcDaily.map(function(d) { return d.date.slice(5); }),
+          datasets: [
+            {
+              type: 'bar',
+              label: 'Expected Daily Rainfall (mm)',
+              data: fcDaily.map(function(d) { return d.precipSumMm; }),
+              backgroundColor: '#A66B45',
+              yAxisID: 'y'
+            },
+            {
+              type: 'line',
+              label: 'Max Rain Probability (%)',
+              data: fcDaily.map(function(d) { return d.precipProbMaxPct; }),
+              borderColor: '#245B3C',
+              tension: 0.25,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, position: 'left', title: { display: true, text: 'Expected Rain (mm)' } },
+            y1: { min: 0, max: 100, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Rain Probability (%)' } }
+          }
+        }
+      });
+    }
+
+    function renderThreshingView() {
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      var snap = appState.telemetryByFarmId[farm.id] || {};
+      var res = computeThreshingSlots(snap);
+      var tbody = document.getElementById('threshingSubDailyTableBody');
+
+      if (!res.available || res.slots.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="py-4 px-3 text-center text-muted-brand">Sub-daily operational forecast unavailable. Connect online to retrieve hourly wind &amp; humidity windows.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = res.slots.map(function(s) {
+        return '<tr class="hover:bg-app">' +
+          '<td class="py-2 px-2.5"><div class="font-mono font-semibold text-slate-900">' + s.date + '</div><div class="text-[11px] text-muted-brand">' + s.period + '</div></td>' +
+          '<td class="py-2 px-2.5 text-right font-mono">' + s.maxProb + '% (' + s.sumRain + ' mm)</td>' +
+          '<td class="py-2 px-2.5 text-right font-mono"><strong>' + s.avgWind + ' m/s</strong><div class="text-[10px] text-muted-brand">Gusts ' + s.maxGust + ' m/s</div></td>' +
+          '<td class="py-2 px-2.5 text-right font-mono">' + s.avgRh + '% RH<div class="text-[10px] text-muted-brand">' + s.avgTemp + ' °C</div></td>' +
+          '<td class="py-2 px-2.5"><span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold mb-1 ' + s.badgeClass + '">' + s.stateLabel + '</span><div class="text-[11px] text-slate-700">' + s.note + '</div></td>' +
+        '</tr>';
+      }).join('');
+
+      var first9 = res.slots.slice(0, 9);
+      renderOrUpdateChart('threshingWindChart', {
+        type: 'bar',
+        data: {
+          labels: first9.map(function(s) { return s.date.slice(5) + ' ' + s.period.slice(0, 4); }),
+          datasets: [
+            {
+              label: 'Mean 10m Wind Speed (m/s)',
+              data: first9.map(function(s) { return s.avgWind; }),
+              backgroundColor: '#245B3C'
+            },
+            {
+              label: 'Peak Wind Gusts (m/s)',
+              data: first9.map(function(s) { return s.maxGust; }),
+              backgroundColor: '#A66B45'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, title: { display: true, text: 'Wind Speed (m/s)' } }
+          }
+        }
+      });
+    }
+
+    function evaluateMaturityScreen() {
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      var snap = appState.telemetryByFarmId[farm.id] || {};
+      var fcDaily = snap.forecastDaily || [];
+
+      var cropCode = document.getElementById('matCropSelect').value;
+      var crop = getCropByCode(cropCode);
+      var plantDateStr = document.getElementById('matPlantingDate').value || farm.plantingDate;
+      var stage = document.getElementById('matGrowthStage').value;
+      var dryness = document.getElementById('matGrainDryness').value;
+      var moistRaw = document.getElementById('matMeasuredMoisture').value;
+      var moistVal = moistRaw !== '' ? Number(moistRaw) : null;
+
+      var planted = new Date(plantDateStr);
+      var now = new Date('2026-11-14T12:00:00Z');
+      var daysElapsed = Math.max(0, Math.round((now.getTime() - planted.getTime()) / (1000 * 60 * 60 * 24)));
+
+      var isMature = (stage === 'HARVEST_READY') || (stage === 'PHYSIOLOGICAL_MATURITY' && dryness === 'HARD_DRY');
+      var isApproaching = !isMature && (stage === 'PHYSIOLOGICAL_MATURITY' || daysElapsed >= crop.durationMin);
+
+      var fc5 = fcDaily.slice(0, 5);
+      var rain5Mm = fc5.length ? Number(fc5.reduce(function(a, d) { return a + d.precipSumMm; }, 0).toFixed(1)) : null;
+      var maxProb5 = fc5.length ? Math.max.apply(null, fc5.map(function(d) { return d.precipProbMaxPct; })) : null;
+
+      var weatherRisk = 'UNKNOWN';
+      if (rain5Mm !== null) {
+        if (rain5Mm >= 10 || maxProb5 >= 60) weatherRisk = 'HIGH';
+        else if (rain5Mm >= 2.5 || maxProb5 >= 30) weatherRisk = 'MODERATE';
+        else weatherRisk = 'LOW';
+      }
+
+      document.getElementById('matDim1Title').textContent = isMature ? 'Mature & Field-Dry' : (isApproaching ? 'Approaching Maturity' : 'Immature / Still Filling');
+      document.getElementById('matDim1Desc').textContent =
+        crop.nameEn + ' planted ' + daysElapsed + ' days ago (documented FAO/EIAR duration: ' + crop.durationMin + '–' + crop.durationMax + ' days). Observed stage: ' + stage + ', Kernel check: ' + dryness + '.';
+
+      document.getElementById('matDim2Title').textContent = weatherRisk === 'UNKNOWN' ? 'Forecast Unavailable' : (weatherRisk + ' Rain Exposure Risk');
+      document.getElementById('matDim2Desc').textContent = rain5Mm !== null
+        ? 'Next 5 days forecast (Open-Meteo Non-NASA): ' + rain5Mm + ' mm cumulative rain, peak daily probability ' + maxProb5 + '%.'
+        : 'Live 5-day forecast unavailable; inspect local sky and woreda advisory.';
+
+      var badge = document.getElementById('maturityDecisionBadge');
+      var tradeoffBox = document.getElementById('matTradeoffBox');
+      if (isMature && weatherRisk === 'LOW') {
+        badge.className = 'px-3 py-1 rounded-full text-xs font-bold badge-suitable';
+        badge.textContent = I18N_STRINGS[appState.language].suitable;
+        tradeoffBox.innerHTML = '<div class="font-bold text-slate-900">Decision: Suitable Window to Harvest Mature Crop</div>' +
+          '<p>Both independent dimensions align: the crop has reached physical harvest readiness and the upcoming 5-day weather window shows low rainfall exposure (' + rain5Mm + ' mm).</p>';
+      } else if (isMature && (weatherRisk === 'HIGH' || weatherRisk === 'MODERATE')) {
+        badge.className = 'px-3 py-1 rounded-full text-xs font-bold badge-risky';
+        badge.textContent = I18N_STRINGS[appState.language].risky + ' (Weather Exposure)';
+        tradeoffBox.innerHTML = '<div class="font-bold text-slate-900">Trade-Off Alert: Mature Crop Faces Upcoming Rain Risk (' + rain5Mm + ' mm / ' + maxProb5 + '% prob)</div>' +
+          '<p>Leaving mature ' + crop.nameEn + ' standing through heavy rain risks panicle shattering, lodging, and pre-harvest sprouting. Harvest during the earliest dry sub-daily window and stack sheaves under waterproof tarpaulins.</p>';
+      } else {
+        badge.className = 'px-3 py-1 rounded-full text-xs font-bold badge-risky';
+        badge.textContent = I18N_STRINGS[appState.language].risky + ' (Crop Not Ready)';
+        tradeoffBox.innerHTML = '<div class="font-bold text-slate-900">Trade-Off Warning: Do NOT Harvest Immature Grain Out of Fear of Rain</div>' +
+          '<p>Harvesting before physiological maturity and kernel hardening causes shriveled grain, low germination vigor for saved seed, and rapid heating/spoilage in storage. Allow grain filling and natural dry-down to complete.</p>';
+      }
+
+      var warnBox = document.getElementById('matStorageWarningBox');
+      if (moistVal === null) {
+        warnBox.innerHTML = '<div class="font-bold">MANDATORY STORAGE READINESS DISCLOSURE</div>' +
+          '<p>Actual grain moisture content has not been measured with a moisture meter. FieldShift Ethiopia CANNOT verify storage readiness from satellite NDVI or weather data alone. Storing moist grain (>12.5–13% moisture) in bulk bags, gotera, or sealed bins causes biological heating, mold growth, aflatoxin contamination, and severe spoilage.</p>';
+      } else if (moistVal > 13.0) {
+        warnBox.innerHTML = '<div class="font-bold">HIGH MOISTURE SPOILAGE DANGER (' + moistVal + '% Measured)</div>' +
+          '<p>Measured grain moisture (' + moistVal + '%) exceeds the safe bulk storage limit (12.5–13.0%). Spread grain on clean tarpaulins during dry sun/wind windows before bagging.</p>';
+      } else {
+        warnBox.innerHTML = '<div class="font-bold">Measured Grain Moisture (' + moistVal + '%) Within Typical Dry Range</div>' +
+          '<p>Keep bags elevated on wooden pallets away from damp walls and re-check temperature after 7 days of storage.</p>';
+      }
+    }
+
+    function runRotationPlanner() {
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      var currentCode = document.getElementById('rotCurrentCrop').value;
+      var prevCode = document.getElementById('rotPrevCrop').value;
+      var soilType = document.getElementById('rotSoilType').value;
+      var waterRegime = document.getElementById('rotWaterRegime').value;
+
+      var weights = {
+        water: Number(document.getElementById('wWater').value),
+        soil: Number(document.getElementById('wSoil').value),
+        nitrogen: Number(document.getElementById('wNitrogen').value),
+        erosion: Number(document.getElementById('wErosion').value),
+        forage: Number(document.getElementById('wForage').value),
+        income: Number(document.getElementById('wIncome').value),
+        risk: Number(document.getElementById('wRisk').value),
+        food: Number(document.getElementById('wFood').value)
+      };
+
+      document.getElementById('val_wWater').textContent = String(weights.water);
+      document.getElementById('val_wSoil').textContent = String(weights.soil);
+      document.getElementById('val_wNitrogen').textContent = String(weights.nitrogen);
+      document.getElementById('val_wErosion').textContent = String(weights.erosion);
+      document.getElementById('val_wForage').textContent = String(weights.forage);
+      document.getElementById('val_wIncome').textContent = String(weights.income);
+      document.getElementById('val_wRisk').textContent = String(weights.risk);
+      document.getElementById('val_wFood').textContent = String(weights.food);
+
+      var curCrop = getCropByCode(currentCode);
+      var prevCrop = getCropByCode(prevCode);
+
+      function scoreCandidate(nextCrop, scenarioRole) {
+        var sameFamilyAsCurrent = nextCrop.family === curCrop.family;
+        var threeYrCerealMonoculture = prevCrop.family === 'Poaceae' && curCrop.family === 'Poaceae' && nextCrop.family === 'Poaceae';
+
+        var sWater = nextCrop.droughtSensitivity.indexOf('Low') === 0 ? 92 : (nextCrop.droughtSensitivity.indexOf('Moderate') === 0 ? 74 : 54);
+        if (waterRegime === 'irrigated') sWater = Math.min(96, sWater + 18);
+
+        var sNitrogen = nextCrop.isNitrogenFixer ? (curCrop.nitrogenDemand === 'High' ? 96 : 90) : (sameFamilyAsCurrent ? 38 : 72);
+        var sSoil = (nextCrop.isNitrogenFixer ? 34 : 16) + (nextCrop.rootDepth !== curCrop.rootDepth ? 32 : 14) + (soilType === 'unknown' || nextCrop.preferredSoils.indexOf(soilType) !== -1 ? 30 : 15);
+        var sErosion = nextCrop.residueCover === 'High' ? 90 : (nextCrop.residueCover === 'Moderate' ? 76 : (farm.slopePercent > 6 ? 48 : 64));
+        var sForage = nextCrop.forageValue === 'High' ? 92 : 74;
+        var sIncome = nextCrop.isNitrogenFixer ? 89 : 76;
+        var sRisk = (!sameFamilyAsCurrent ? 91 : (threeYrCerealMonoculture ? 35 : 58));
+        var sFood = 85;
+
+        var wSum = weights.water + weights.soil + weights.nitrogen + weights.erosion + weights.forage + weights.income + weights.risk + weights.food;
+        var total = (
+          sWater * weights.water +
+          sSoil * weights.soil +
+          sNitrogen * weights.nitrogen +
+          sErosion * weights.erosion +
+          sForage * weights.forage +
+          sIncome * weights.income +
+          sRisk * weights.risk +
+          sFood * weights.food
+        ) / (wSum || 1);
+
+        if (threeYrCerealMonoculture) total -= 14;
+        if (nextCrop.code === curCrop.code) total -= 12;
+
+        return {
+          role: scenarioRole,
+          nextCrop: nextCrop,
+          totalScore: Number(Math.max(20, Math.min(98, total)).toFixed(1)),
+          components: {
+            water: sWater,
+            soil: sSoil,
+            nitrogen: sNitrogen,
+            erosion: sErosion,
+            forage: sForage,
+            risk: sRisk
+          }
+        };
+      }
+
+      // Select distinct crops for the 4 required scenarios
+      var soilHealthCrop = soilType === 'Vertisol' ? getCropByCode('CHICKPEA') : getCropByCode('FABA_BEAN');
+      if (curCrop.family === 'Fabaceae') {
+        soilHealthCrop = farm.elevationMeters >= 2000 ? getCropByCode('WHEAT') : getCropByCode('TEFF');
+      }
+
+      var waterResilientCrop = curCrop.code === 'SORGHUM' ? getCropByCode('CHICKPEA') : (soilType === 'Vertisol' ? getCropByCode('CHICKPEA') : getCropByCode('SORGHUM'));
+      var balancedCrop = curCrop.code === 'FIELD_PEA' ? getCropByCode('BARLEY') : getCropByCode('FIELD_PEA');
+
+      var scenarios = [
+        {
+          title: '1. Current / Baseline Rotation',
+          subtitle: 'Repeating Farmer Sequence (' + prevCrop.nameEn + ' → ' + curCrop.nameEn + ' → ' + curCrop.nameEn + ')',
+          eval: scoreCandidate(curCrop, 'BASELINE'),
+          sequence: [prevCrop.nameEn, curCrop.nameEn, curCrop.nameEn],
+          pros: ['Familiar seedbed preparation, threshing tools, and local market channels.'],
+          cons: [
+            curCrop.family === 'Poaceae'
+              ? 'Consecutive cereal monoculture depletes soil nitrogen and amplifies rust, take-all root rot, and grass weeds.'
+              : 'Repeating the same legume consecutively builds soil-borne Ascochyta/Fusarium root pathogens.'
+          ],
+          gap: soilType === 'unknown' ? 'Soil texture and pH are marked unknown; verify with woreda soil test.' : 'Verify field organic matter and localized Striga/rust history.'
+        },
+        {
+          title: '2. Soil-Health & Nitrogen Rotation',
+          subtitle: 'Biological N-Fixation Break (' + prevCrop.nameEn + ' → ' + curCrop.nameEn + ' → ' + soilHealthCrop.nameEn + ')',
+          eval: scoreCandidate(soilHealthCrop, 'SOIL_HEALTH'),
+          sequence: [prevCrop.nameEn, curCrop.nameEn, soilHealthCrop.nameEn],
+          pros: [
+            soilHealthCrop.isNitrogenFixer
+              ? 'Symbiotic Rhizobium nodulation fixes atmospheric nitrogen and breaks cereal pest/rust cycles.'
+              : 'Capitalizes on residual legume nitrogen with fibrous root structure.',
+            'Alternates root depth (' + curCrop.rootDepth + ' → ' + soilHealthCrop.rootDepth + ') to reduce subsoil compaction.'
+          ],
+          cons: [
+            soilHealthCrop.residueCover === 'Low'
+              ? 'Lower post-harvest surface residue cover than cereal stover; maintain contour bunds on slopes.'
+              : 'Requires timely weeding during early canopy establishment.'
+          ],
+          gap: 'Local Rhizobium inoculant availability and soil pH (' + (farm.soilPh || 'unmeasured') + ') should be verified.'
+        },
+        {
+          title: '3. Water-Resilience Rotation',
+          subtitle: 'Drought-Hedging Sequence (' + prevCrop.nameEn + ' → ' + curCrop.nameEn + ' → ' + waterResilientCrop.nameEn + ')',
+          eval: scoreCandidate(waterResilientCrop, 'WATER_RESILIENCE'),
+          sequence: [prevCrop.nameEn, curCrop.nameEn, waterResilientCrop.nameEn],
+          pros: [
+            'Lower seasonal water demand (' + waterResilientCrop.waterNeedMin + '–' + waterResilientCrop.waterNeedMax + ' mm) and ' + waterResilientCrop.droughtSensitivity + ' drought sensitivity.',
+            'Deep root architecture (' + waterResilientCrop.rootDepth + ') accesses residual moisture during terminal dry spells.'
+          ],
+          cons: [
+            waterResilientCrop.code === 'SORGHUM'
+              ? 'Monitor for Striga weed and bird damage during grain filling.'
+              : 'Avoid planting in waterlogged pockets during peak August rain.'
+          ],
+          gap: 'Subsoil moisture depth at planting must be verified physically.'
+        },
+        {
+          title: '4. Short-Season Food & Forage Balance',
+          subtitle: 'Diversified Break (' + prevCrop.nameEn + ' → ' + curCrop.nameEn + ' → ' + balancedCrop.nameEn + ')',
+          eval: scoreCandidate(balancedCrop, 'BALANCED'),
+          sequence: [prevCrop.nameEn, curCrop.nameEn, balancedCrop.nameEn],
+          pros: [
+            'Short growing duration (' + balancedCrop.durationMin + '–' + balancedCrop.durationMax + ' days) escapes late-season dry spells.',
+            'Provides high-protein household pulse/grain plus palatable haulm/straw for livestock.'
+          ],
+          cons: ['Requires a 2–3 year interval before repeating Pisum/Lens pulses on the same plot.'],
+          gap: 'Check woreda improved seed variety availability.'
+        }
+      ];
+
+      document.getElementById('rotationScenariosGrid').innerHTML = scenarios.map(function(s, idx) {
+        var isTop = idx === 1 || s.eval.totalScore >= 82;
+        return '<div class="p-4 rounded-xl border ' + (idx === 1 ? 'border-emerald-700 bg-primary-light' : 'border-brand bg-app') + ' flex flex-col justify-between text-xs">' +
+          '<div>' +
+            '<div class="flex items-center justify-between gap-2 mb-1.5">' +
+              '<span class="font-bold text-slate-900">' + s.title + '</span>' +
+              '<span class="px-2.5 py-0.5 rounded-full font-bold ' + (s.eval.totalScore >= 75 ? 'badge-suitable' : 'badge-risky') + '">' + s.eval.totalScore + ' / 100</span>' +
+            '</div>' +
+            '<p class="text-[11px] font-medium text-primary-brand mb-2">' + s.subtitle + '</p>' +
+            '<div class="p-2 rounded bg-white border border-brand mb-2.5">' +
+              '<div class="text-[10px] uppercase font-bold text-muted-brand">Recommended Next Crop</div>' +
+              '<div class="font-bold text-sm text-slate-900">' + s.eval.nextCrop.nameEn + ' <span class="text-xs font-normal text-muted-brand">(' + s.eval.nextCrop.nameAm + ')</span></div>' +
+              '<div class="text-[11px] text-muted-brand">Water: ' + s.eval.nextCrop.waterNeedMin + '–' + s.eval.nextCrop.waterNeedMax + ' mm • Duration: ' + s.eval.nextCrop.durationMin + '–' + s.eval.nextCrop.durationMax + 'd</div>' +
+            '</div>' +
+            '<div class="space-y-1 mb-2">' +
+              '<div class="font-semibold text-emerald-900">Expected Advantages:</div>' +
+              '<ul class="list-disc pl-4 space-y-0.5 text-slate-700">' + s.pros.map(function(p) { return '<li>' + p + '</li>'; }).join('') + '</ul>' +
+            '</div>' +
+            '<div class="space-y-1 mb-2">' +
+              '<div class="font-semibold text-amber-900">Risks &amp; Trade-Offs:</div>' +
+              '<ul class="list-disc pl-4 space-y-0.5 text-slate-700">' + s.cons.map(function(c) { return '<li>' + c + '</li>'; }).join('') + '</ul>' +
+            '</div>' +
+          '</div>' +
+          '<div class="pt-2 border-t border-brand text-[11px] text-muted-brand">' +
+            '<strong>Data Gap / Assumption:</strong> ' + s.gap +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      renderOrUpdateChart('rotationComparisonChart', {
+        type: 'bar',
+        data: {
+          labels: ['Water Suit.', 'Soil Health', 'N-Fixation', 'Erosion Ctrl', 'Forage Value', 'Risk Break'],
+          datasets: [
+            {
+              label: 'Baseline (' + curCrop.nameEn + ')',
+              data: [
+                scenarios[0].eval.components.water,
+                scenarios[0].eval.components.soil,
+                scenarios[0].eval.components.nitrogen,
+                scenarios[0].eval.components.erosion,
+                scenarios[0].eval.components.forage,
+                scenarios[0].eval.components.risk
+              ],
+              backgroundColor: '#94A3B8'
+            },
+            {
+              label: 'Soil-Health (' + soilHealthCrop.nameEn + ')',
+              data: [
+                scenarios[1].eval.components.water,
+                scenarios[1].eval.components.soil,
+                scenarios[1].eval.components.nitrogen,
+                scenarios[1].eval.components.erosion,
+                scenarios[1].eval.components.forage,
+                scenarios[1].eval.components.risk
+              ],
+              backgroundColor: '#245B3C'
+            },
+            {
+              label: 'Water-Resilient (' + waterResilientCrop.nameEn + ')',
+              data: [
+                scenarios[2].eval.components.water,
+                scenarios[2].eval.components.soil,
+                scenarios[2].eval.components.nitrogen,
+                scenarios[2].eval.components.erosion,
+                scenarios[2].eval.components.forage,
+                scenarios[2].eval.components.risk
+              ],
+              backgroundColor: '#A66B45'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, max: 100, title: { display: true, text: 'Component Score (0–100)' } }
+          }
+        }
+      });
+
+      document.getElementById('cropCatalogueTableBody').innerHTML = CROP_CATALOGUE.map(function(c) {
+        return '<tr class="hover:bg-app">' +
+          '<td class="py-2 px-2.5"><div class="font-bold text-slate-900">' + c.nameEn + '</div><div class="text-[11px] text-muted-brand">' + c.nameAm + ' • ' + c.nameOm + '</div></td>' +
+          '<td class="py-2 px-2.5">' + c.family + (c.isNitrogenFixer ? ' <span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 font-semibold text-[10px]">N-Fixer</span>' : '') + '</td>' +
+          '<td class="py-2 px-2.5 text-right font-mono">' + c.durationMin + '–' + c.durationMax + ' d</td>' +
+          '<td class="py-2 px-2.5 text-right font-mono">' + c.waterNeedMin + '–' + c.waterNeedMax + ' mm</td>' +
+          '<td class="py-2 px-2.5 text-right font-mono">' + c.kcAvg + '</td>' +
+          '<td class="py-2 px-2.5">' + c.droughtSensitivity + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    function renderDataSourcesView() {
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      var snap = appState.telemetryByFarmId[farm.id] || {};
+
+      var sources = [
+        {
+          provider: 'NASA Langley Research Center (LaRC)',
+          product: 'NASA POWER Agroclimatology Daily & Climatology API v2.5 (MERRA-2 / GEOS-5.12.4)',
+          measures: 'Corrected precipitation (PRECTOTCORR, mm/d), 2m temperature (T2M, T2M_MAX, T2M_MIN, °C), relative humidity (RH2M, %), wind speed (WS2M, m/s), shortwave solar irradiance (ALLSKY_SFC_SW_DWN), surface & root-zone soil wetness (GWETTOP, GWETROOT)',
+          resolution: '0.5° × 0.625° (~55 km meteorology) / 1.0° × 1.0° (solar) • Daily time series',
+          dataType: 'NASA Model & Observation-Derived Reanalysis',
+          status: snap.nasaAvailable ? 'LIVE CONNECTED' : 'CACHED / OFFLINE',
+          badgeClass: snap.nasaAvailable ? 'badge-suitable' : 'badge-risky',
+          url: 'https://power.larc.nasa.gov/docs/',
+          limitations: 'Gridded regional product (~55 km cell) with 2–5 day final assimilation latency; does not replace an on-farm rain gauge in steep escarpment terrain.'
+        },
+        {
+          provider: 'NASA Goddard Space Flight Center (GES DISC)',
+          product: 'GPM IMERG V07B (GPM_3IMERGDF / GPM_3IMERGDL)',
+          measures: 'Half-hourly and daily satellite-gauge merged precipitation estimates (mm/day)',
+          resolution: '0.1° × 0.1° (~11 km) • Half-hourly / Daily (Early ~4h, Late ~14h, Final ~3.5 months)',
+          dataType: 'NASA Satellite Observation Estimate',
+          status: 'ADAPTER READY (Earthdata Token Optional)',
+          badgeClass: 'badge-suitable',
+          url: 'https://gpm.nasa.gov/data/imerg',
+          limitations: 'IMERG estimates rainfall that has already occurred; it is NEVER a future weather forecast. Direct GES DISC granule download requires a user NASA Earthdata Bearer Token.'
+        },
+        {
+          provider: 'NASA JPL / NSIDC DAAC',
+          product: 'NASA SMAP L3 Radiometer Soil Moisture (SPL3SMP v009 / SPL3SMP_E v006) & GLDAS/MERRA-2 Wetness',
+          measures: 'Top 0–5 cm surface soil moisture (m³/m³) and model-assimilated surface/root-zone wetness index (0–1)',
+          resolution: '36 km (SPL3SMP) / 9 km enhanced (SPL3SMP_E) • 1–3 day revisit',
+          dataType: 'NASA Satellite Radiometer & Assimilation',
+          status: snap.nasaAvailable ? 'ACTIVE VIA GWETTOP/GWETROOT' : 'STANDBY',
+          badgeClass: 'badge-suitable',
+          url: 'https://earthdata.nasa.gov/data/instruments/smap',
+          limitations: 'SMAP L-band radiometer senses only the top ~5 cm surface layer and is flagged during heavy rain (>25.4 mm/h) or dense vegetation cover.'
+        },
+        {
+          provider: 'NASA LP DAAC / ORNL DAAC & USGS',
+          product: 'MODIS/Terra 16-Day NDVI (MOD13Q1 v061), VIIRS (VNP13A1), SRTMGL1 30m DEM & Landsat 8/9',
+          measures: 'Vegetation condition (NDVI/EVI), terrain elevation (m a.s.l.), and slope (%)',
+          resolution: '250 m (MODIS) / 30 m (SRTM & Landsat) • 16-day composite',
+          dataType: 'NASA Optical Reflectance & Radar Topography',
+          status: 'INTEGRATED CONTEXT',
+          badgeClass: 'badge-suitable',
+          url: 'https://www.earthdata.nasa.gov/data/catalog/lpcloud-mod13q1-061',
+          limitations: 'A 250 m MODIS pixel mixes multiple smallholder plots. NDVI measures canopy greenness, NEVER kernel moisture or safe grain storage readiness.'
+        },
+        {
+          provider: 'Open-Meteo (ECMWF IFS 9km & NOAA GFS)',
+          product: 'Operational Weather Forecast API v1 (Explicitly Labelled Non-NASA External Forecast)',
+          measures: 'Upcoming 7-day / 168-hour precipitation probability (%), precipitation amount (mm), 10m wind speed (m/s), 10m wind gusts (m/s), temperature (°C), and relative humidity (%)',
+          resolution: '9 km (ECMWF IFS HRES) / 25 km (GFS) • Hourly & Daily out to 7 days',
+          dataType: 'External Operational Forecast (Non-NASA)',
+          status: snap.forecastAvailable ? 'LIVE CONNECTED' : 'CACHED / OFFLINE',
+          badgeClass: snap.forecastAvailable ? 'badge-suitable' : 'badge-risky',
+          url: 'https://open-meteo.com/en/docs',
+          limitations: 'External numerical weather prediction model (NOT NASA). Forecast skill degrades beyond 72–96 hours for localized tropical convection.'
+        },
+        {
+          provider: 'FAO & Ethiopian Agricultural Research Institutes (EIAR / IQQO / ARARI)',
+          product: 'FAO Irrigation & Drainage Paper 24 / Training Manual No. 3 & Regional Research Station Baselines',
+          measures: 'Crop growing duration (days), seasonal crop water requirements (mm), stage crop factors (Kc), drought sensitivity groups, and 30-year station climatology',
+          resolution: 'Ethiopian Agro-Ecological Zone & Station Reference',
+          dataType: 'Peer-Reviewed Agronomic Reference',
+          status: 'VERIFIED REFERENCE',
+          badgeClass: 'badge-suitable',
+          url: 'https://www.fao.org/4/u3160e/u3160e04.htm',
+          limitations: 'Reference ranges must be adjusted for local cultivar release and altitude.'
+        }
+      ];
+
+      document.getElementById('dataSourcesCardsList').innerHTML = sources.map(function(s) {
+        return '<div class="p-4 rounded-xl bg-app border border-brand text-xs space-y-1.5">' +
+          '<div class="flex flex-wrap items-center justify-between gap-2">' +
+            '<div class="font-bold text-sm text-slate-900">' + s.provider + ' — <span class="text-primary-brand">' + s.product + '</span></div>' +
+            '<span class="px-2.5 py-0.5 rounded-full font-semibold ' + s.badgeClass + '">' + s.status + '</span>' +
+          '</div>' +
+          '<div><strong>Measured Variables:</strong> ' + s.measures + '</div>' +
+          '<div class="flex flex-wrap gap-4 text-muted-brand">' +
+            '<span><strong>Resolution &amp; Coverage:</strong> ' + s.resolution + '</span>' +
+            '<span><strong>Category:</strong> ' + s.dataType + '</span>' +
+            '<a href="' + s.url + '" target="_blank" rel="noopener noreferrer" class="text-primary-brand underline font-medium">Official Documentation ↗</a>' +
+          '</div>' +
+          '<div class="p-2 rounded bg-white border border-brand text-slate-700"><strong>Known Scientific Limitations:</strong> ' + s.limitations + '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    function renderSettingsView() {
+      var cachedCount = 0;
+      for (var i = 0; i < appState.farms.length; i++) {
+        var f = appState.farms[i];
+        if (safeLoadLocal('fieldshift_telemetry_' + f.id, null)) cachedCount++;
+      }
+
+      document.getElementById('offlineCacheStatsBox').innerHTML =
+        '<div><strong>Registered Extension Farms Cached:</strong> ' + appState.farms.length + ' farms</div>' +
+        '<div><strong>Downloaded NASA + Forecast Regional Snapshots:</strong> ' + cachedCount + ' of ' + appState.farms.length + ' clusters cached for offline use</div>' +
+        '<div><strong>Queued Field Observations Pending Sync:</strong> ' + appState.queuedObservations.filter(function(o) { return !o.synced; }).length + ' records</div>';
+
+      document.getElementById('lblQueuedObsCount').textContent = String(
+        appState.queuedObservations.filter(function(o) { return !o.synced; }).length
+      );
+
+      var wrap = document.getElementById('recordedObservationsTableWrap');
+      if (appState.queuedObservations.length === 0) {
+        wrap.innerHTML = '<div class="p-3 rounded bg-app border border-brand text-muted-brand">No field observations logged yet. Use the Crop Maturity screen to log physical field inspections.</div>';
+      } else {
+        wrap.innerHTML = '<div class="space-y-2">' + appState.queuedObservations.map(function(o) {
+          return '<div class="p-2.5 rounded bg-app border border-brand flex items-center justify-between">' +
+            '<div><strong>' + o.farmName + '</strong> • Crop: ' + o.cropCode + ' • Stage: ' + o.stage + ' • Kernel Dryness: ' + o.dryness + '</div>' +
+            '<span class="px-2 py-0.5 rounded text-[10px] font-bold ' + (o.synced ? 'badge-suitable' : 'badge-risky') + '">' + (o.synced ? 'Synced' : 'Queued Offline') + '</span>' +
+          '</div>';
+        }).join('') + '</div>';
+      }
+    }
+
+    function renderAllActiveViews() {
+      renderDashboardView();
+      renderFarmsView();
+      renderWeatherView();
+      renderSowingView();
+      renderHarvestingView();
+      renderThreshingView();
+      evaluateMaturityScreen();
+      runRotationPlanner();
+      renderDataSourcesView();
+      renderSettingsView();
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    function renderOrUpdateChart(canvasId, config) {
+      var ctx = document.getElementById(canvasId);
+      if (!ctx || typeof Chart === 'undefined') return;
+      if (appState.charts[canvasId]) {
+        appState.charts[canvasId].destroy();
+      }
+      appState.charts[canvasId] = new Chart(ctx, config);
+    }
+
+    // ========================================================================
+    // 6. USER INTERACTION HANDLERS (GLOBAL SCOPE)
+    // ========================================================================
+    function navigateToRoute(routeKey) {
+      appState.currentRoute = routeKey;
+      var sections = document.querySelectorAll('.route-section');
+      for (var i = 0; i < sections.length; i++) {
+        sections[i].classList.add('hidden');
+      }
+      var target = document.getElementById('view-' + routeKey);
+      if (target) target.classList.remove('hidden');
+
+      var btns = document.querySelectorAll('.nav-route-btn');
+      for (var j = 0; j < btns.length; j++) {
+        var r = btns[j].getAttribute('data-route');
+        if (r === routeKey) {
+          btns[j].classList.remove('nav-btn-inactive');
+          btns[j].classList.add('nav-btn-active');
+        } else {
+          btns[j].classList.remove('nav-btn-active');
+          btns[j].classList.add('nav-btn-inactive');
+        }
+      }
+
+      if (routeKey === 'farms') {
+        setTimeout(function() { initOrUpdateLeafletMap(); }, 80);
+      }
+      renderAllActiveViews();
+    }
+
+    function handleGlobalFarmChange(farmId) {
+      appState.selectedFarmId = farmId;
+      safeSaveLocal('fieldshift_selected_farm', farmId);
+      populateFarmSelector();
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      document.getElementById('matCropSelect').value = farm.currentCropCode;
+      document.getElementById('matPlantingDate').value = farm.plantingDate;
+      document.getElementById('rotCurrentCrop').value = farm.currentCropCode;
+      document.getElementById('rotPrevCrop').value = farm.previousCropCode;
+      document.getElementById('rotSoilType').value = farm.soilType;
+      document.getElementById('rotWaterRegime').value = farm.waterRegime;
+      fetchLiveTelemetryForFarm(farm);
+    }
+
+    function refreshLiveTelemetry() {
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      showToast('Fetching live NASA POWER & Open-Meteo data for ' + farm.name + '...', 'info');
+      fetchLiveTelemetryForFarm(farm);
+    }
+
+    function toggleOfflineSimulation() {
+      appState.simulatedOffline = !appState.simulatedOffline;
+      var dot = document.getElementById('offlineDot');
+      var lbl = document.getElementById('offlineStatusLabel');
+      if (appState.simulatedOffline) {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-600';
+        lbl.textContent = 'Offline Mode (Cached)';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-600';
+        lbl.textContent = 'Online Mode';
+      }
+      var _farm = getSelectedFarm(); if (_farm) fetchLiveTelemetryForFarm(_farm);
+    }
+
+    function updateSowingThresholds() {
+      appState.sowingConfig.onsetThresholdMm = Number(document.getElementById('sliderOnsetMm').value);
+      appState.sowingConfig.maxDrySpellDays = Number(document.getElementById('sliderDrySpellDays').value);
+      appState.sowingConfig.seasonMode = document.getElementById('selectSeasonMode').value;
+      document.getElementById('lblOnsetMmVal').textContent = appState.sowingConfig.onsetThresholdMm + ' mm';
+      document.getElementById('lblDrySpellDaysVal').textContent = appState.sowingConfig.maxDrySpellDays + ' days';
+      document.getElementById('lblTargetSeason').textContent = appState.sowingConfig.seasonMode;
+      renderSowingView();
+      renderDashboardView();
+    }
+
+    function updateThreshingThresholds() {
+      appState.threshingConfig.minWindMs = Number(document.getElementById('sliderMinWind').value);
+      appState.threshingConfig.maxWindMs = Number(document.getElementById('sliderMaxWind').value);
+      appState.threshingConfig.maxRhPct = Number(document.getElementById('sliderMaxRh').value);
+      document.getElementById('lblMinWindVal').textContent = appState.threshingConfig.minWindMs + ' m/s';
+      document.getElementById('lblMaxWindVal').textContent = appState.threshingConfig.maxWindMs + ' m/s';
+      document.getElementById('lblMaxRhVal').textContent = appState.threshingConfig.maxRhPct + '%';
+      renderThreshingView();
+      renderDashboardView();
+    }
+
+    function applyThreshingPreset(minW, maxW, maxRh) {
+      document.getElementById('sliderMinWind').value = String(minW);
+      document.getElementById('sliderMaxWind').value = String(maxW);
+      document.getElementById('sliderMaxRh').value = String(maxRh);
+      updateThreshingThresholds();
+      showToast('Applied provisional threshing wind preset (' + minW + '–' + maxW + ' m/s)', 'info');
+    }
+
+    function resetRotationWeights() {
+      document.getElementById('wWater').value = '4';
+      document.getElementById('wSoil').value = '5';
+      document.getElementById('wNitrogen').value = '5';
+      document.getElementById('wErosion').value = '3';
+      document.getElementById('wForage').value = '4';
+      document.getElementById('wIncome').value = '4';
+      document.getElementById('wRisk').value = '5';
+      document.getElementById('wFood').value = '5';
+      runRotationPlanner();
+      showToast('Reset farmer priority weights to balanced defaults.', 'info');
+    }
+
+    function loadFarmIntoForm(farmId) {
+      var f = appState.farms.find(function(x) { return x.id === farmId; });
+      if (!f) return;
+      document.getElementById('inputFarmName').value = f.name;
+      document.getElementById('inputFarmerName').value = f.farmerName;
+      document.getElementById('inputRegion').value = f.region;
+      document.getElementById('inputZone').value = f.zone;
+      document.getElementById('inputWoreda').value = f.woreda;
+      document.getElementById('inputLat').value = String(f.latitude);
+      document.getElementById('inputLon').value = String(f.longitude);
+      document.getElementById('inputElevation').value = String(f.elevationMeters);
+      document.getElementById('inputAreaHa').value = String(f.areaHectares);
+      document.getElementById('inputSlopePct').value = String(f.slopePercent);
+      document.getElementById('inputSoilType').value = f.soilType;
+      document.getElementById('inputSoilPh').value = f.soilPh !== null ? String(f.soilPh) : '';
+      document.getElementById('inputWaterRegime').value = f.waterRegime;
+      document.getElementById('inputCurrentCrop').value = f.currentCropCode;
+      document.getElementById('inputPrevCrop1').value = f.previousCropCode;
+      document.getElementById('inputPlantingDate').value = f.plantingDate;
+      showToast('Loaded ' + f.name + ' into form editor.', 'info');
+    }
+
+    function handleSaveFarmProfile(ev) {
+      ev.preventDefault();
+      var name = document.getElementById('inputFarmName').value.trim();
+      var farmer = document.getElementById('inputFarmerName').value.trim();
+      if (!name || !farmer) return;
+
+      var newFarm = {
+        id: 'farm_custom_' + Date.now(),
+        name: name,
+        farmerName: farmer,
+        region: document.getElementById('inputRegion').value,
+        zone: document.getElementById('inputZone').value.trim() || 'Custom Zone',
+        woreda: document.getElementById('inputWoreda').value.trim() || 'Custom Woreda',
+        latitude: Number(document.getElementById('inputLat').value),
+        longitude: Number(document.getElementById('inputLon').value),
+        elevationMeters: Number(document.getElementById('inputElevation').value) || 1850,
+        areaHectares: Number(document.getElementById('inputAreaHa').value) || 1.0,
+        slopePercent: Number(document.getElementById('inputSlopePct').value) || 2.0,
+        soilType: document.getElementById('inputSoilType').value,
+        soilPh: document.getElementById('inputSoilPh').value !== '' ? Number(document.getElementById('inputSoilPh').value) : null,
+        waterRegime: document.getElementById('inputWaterRegime').value,
+        currentCropCode: document.getElementById('inputCurrentCrop').value,
+        previousCropCode: document.getElementById('inputPrevCrop1').value,
+        plantingDate: document.getElementById('inputPlantingDate').value || '2026-07-15',
+        fieldTitle: 'Registered Field (' + (Number(document.getElementById('inputAreaHa').value) || 1.0) + ' ha)',
+        baselineCitation: 'NASA POWER 0.5° Agroclimatology Grid & Ethiopian NMA Regional Reference',
+        baselineUrl: 'https://power.larc.nasa.gov/docs/',
+        documentedAnnualRainMm: 900,
+        documentedRainRange: 'Live NASA POWER gridded series for custom coordinates',
+        documentedTempRange: 'Live NASA POWER T2M_MIN / T2M_MAX series',
+        documentedSoils: 'User-recorded soil profile: ' + document.getElementById('inputSoilType').value
+      };
+
+      appState.farms.push(newFarm);
+      appState.selectedFarmId = newFarm.id;
+      safeSaveLocal('fieldshift_farms_v1', appState.farms);
+      populateFarmSelector();
+      fetchLiveTelemetryForFarm(newFarm);
+      showToast('Saved farm profile "' + newFarm.name + '" and triggered live NASA sync.', 'info');
+    }
+
+    function useBrowserGpsForFarm() {
+      if (!navigator.geolocation) {
+        showToast('Browser geolocation is not supported on this device.', 'warn');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        function(pos) {
+          var lat = Number(pos.coords.latitude.toFixed(4));
+          var lon = Number(pos.coords.longitude.toFixed(4));
+          document.getElementById('inputLat').value = String(lat);
+          document.getElementById('inputLon').value = String(lon);
+          if (appState.mapInstance && appState.mapMarker) {
+            appState.mapInstance.setView([lat, lon], 10);
+            appState.mapMarker.setLatLng([lat, lon]);
+          }
+          showToast('GPS coordinates captured: ' + lat + '°N, ' + lon + '°E', 'info');
+        },
+        function() {
+          showToast('GPS permission denied or unavailable; click directly on the map instead.', 'warn');
+        }
+      );
+    }
+
+    function saveFieldObservationOfflineQueue() {
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      var obsRecord = {
+        id: Date.now(),
+        farmId: farm.id,
+        farmName: farm.name,
+        cropCode: document.getElementById('matCropSelect').value,
+        stage: document.getElementById('matGrowthStage').value,
+        dryness: document.getElementById('matGrainDryness').value,
+        moisture: document.getElementById('matMeasuredMoisture').value || 'Unmeasured',
+        createdAt: new Date().toISOString(),
+        synced: !appState.simulatedOffline && navigator.onLine
+      };
+      appState.queuedObservations.unshift(obsRecord);
+      safeSaveLocal('fieldshift_obs_queue', appState.queuedObservations);
+      renderSettingsView();
+      showToast(obsRecord.synced ? 'Field observation saved & synced.' : 'Field observation queued in offline storage for later sync.', 'info');
+    }
+
+    function syncQueuedFieldObservations() {
+      if (appState.simulatedOffline) {
+        showToast('Switch to Online Mode first to synchronize queued observations.', 'warn');
+        return;
+      }
+      for (var i = 0; i < appState.queuedObservations.length; i++) {
+        appState.queuedObservations[i].synced = true;
+      }
+      safeSaveLocal('fieldshift_obs_queue', appState.queuedObservations);
+      renderSettingsView();
+      showToast('All queued field observations synchronized.', 'info');
+    }
+
+    async function downloadAllClustersForOffline() {
+      if (appState.simulatedOffline) {
+        showToast('Disable Offline Mode simulation to download live snapshots for all clusters.', 'warn');
+        return;
+      }
+      showToast('Downloading live NASA POWER & Open-Meteo snapshots for all 4 Ethiopian clusters...', 'info');
+      for (var i = 0; i < appState.farms.length; i++) {
+        await fetchLiveTelemetryForFarm(appState.farms[i]);
+      }
+      renderSettingsView();
+      showToast('All 4 regional cluster snapshots cached for offline access.', 'info');
+    }
+
+    function clearOfflineCache() {
+      try {
+        for (var i = 0; i < appState.farms.length; i++) {
+          localStorage.removeItem('fieldshift_telemetry_' + appState.farms[i].id);
+        }
+      } catch (e) {}
+      renderSettingsView();
+      showToast('Cleared cached telemetry snapshots.', 'info');
+    }
+
+    function setAppLanguage(lang) {
+      appState.language = lang;
+      document.getElementById('langBtnEn').className = lang === 'en' ? 'px-2 py-1.5 bg-primary text-white' : 'px-2 py-1.5 hover:bg-primary-light';
+      document.getElementById('langBtnAm').className = lang === 'am' ? 'px-2 py-1.5 bg-primary text-white' : 'px-2 py-1.5 hover:bg-primary-light';
+      document.getElementById('langBtnOm').className = lang === 'om' ? 'px-2 py-1.5 bg-primary text-white' : 'px-2 py-1.5 hover:bg-primary-light';
+      var sel = document.getElementById('settingsLangSelect');
+      if (sel) sel.value = lang;
+
+      var dict = I18N_STRINGS[lang] || I18N_STRINGS.en;
+      var nodes = document.querySelectorAll('[data-i18n]');
+      for (var i = 0; i < nodes.length; i++) {
+        var k = nodes[i].getAttribute('data-i18n');
+        if (dict[k]) nodes[i].textContent = dict[k];
+      }
+      renderAllActiveViews();
+    }
+
+    function speakCurrentScreenSummary() {
+      var farm = getSelectedFarm();
+      if (!farm) return;
+      var snap = appState.telemetryByFarmId[farm.id] || {};
+      var sowingDec = computeSowingDecision(farm, snap);
+      var harvestDec = computeHarvestDecision(snap);
+
+      var textToRead = '';
+      var langCode = 'en-US';
+      if (appState.language === 'am') {
+        langCode = 'am-ET';
+        textToRead = 'ፊልድ ሺፍት ኢትዮጵያ የግብርና ውሳኔ ድጋፍ። የተመረጠው እርሻ ' + farm.name + '። የዝናብ መጀመሪያ ሁኔታ፡ ' + sowingDec.stateLabel + '። የአጨዳ ሁኔታ፡ ' + harvestDec.stateLabel + '።';
+      } else if (appState.language === 'om') {
+        langCode = 'om-ET';
+        textToRead = 'FieldShift Itoophiyaa Gorsa Qonnaa. Ooyiruun filatame ' + farm.name + '. Haalli roobaa fi facaa\'iinsaa: ' + sowingDec.stateLabel + '. Haalli haamaa: ' + harvestDec.stateLabel + '.';
+      } else {
+        langCode = 'en-US';
+        textToRead = 'FieldShift Ethiopia advisory for ' + farm.name + '. Sowing onset status: ' + sowingDec.headline + ' Harvesting outlook: ' + harvestDec.headline;
+      }
+
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        var utter = new SpeechSynthesisUtterance(textToRead);
+        utter.lang = langCode;
+        utter.rate = 0.95;
+        window.speechSynthesis.speak(utter);
+        showToast('Playing voice advisory (' + langCode + ')', 'info');
+      } else {
+        showToast('Speech synthesis not supported on this browser.', 'warn');
+      }
+    }
+
+    function stopVoicePlayback() {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        showToast('Stopped voice playback.', 'info');
+      }
+    }
+
+    // ========================================================================
+    // 7. INITIALIZATION ON LOAD
+    // ========================================================================
+    window.addEventListener('DOMContentLoaded', function() {
+      var savedFarms = safeLoadLocal('fieldshift_farms_v1', null);
+      appState.farms = savedFarms || [];
+      appState.queuedObservations = safeLoadLocal('fieldshift_obs_queue', []);
+      populateFarmSelector();
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+      var _farm = getSelectedFarm(); if (_farm) fetchLiveTelemetryForFarm(_farm);
+    });
+  </script>
+</body>
+</html>

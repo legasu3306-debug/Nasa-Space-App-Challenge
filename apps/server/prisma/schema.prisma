@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  name              String
+  role              String   @default("EXTENSION_AGENT")
+  preferredLanguage String   @default("en")
+  woreda            String?
+  region            String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  farms             Farm[]
+}
+
+model Farm {
+  id                String   @id @default(cuid())
+  userId            String?
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name              String
+  farmerName        String
+  region            String
+  zone              String
+  woreda            String
+  latitude          Decimal  @db.Decimal(8, 5)
+  longitude         Decimal  @db.Decimal(8, 5)
+  elevationMeters   Int      @default(1850)
+  totalAreaHectares Decimal  @db.Decimal(6, 2)
+  waterRegime       String   @default("rainfed")
+  waterSources      String[]
+  farmerPriorities  String[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  fields            Field[]
+
+  @@index([region, woreda])
+  @@index([latitude, longitude])
+}
+
+model Field {
+  id                    String             @id @default(cuid())
+  farmId                String
+  farm                  Farm               @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  name                  String
+  areaHectares          Decimal            @db.Decimal(6, 2)
+  slopePercent          Decimal            @default(2.5) @db.Decimal(4, 1)
+  currentCropCode       String?
+  previousCropCode      String?
+  plantingDate          DateTime?
+  expectedHarvestWindow String?
+  primarySeason         String             @default("Kiremt")
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  soilProfile           SoilProfile?
+  cropHistory           CropHistory[]
+  fieldObservations     FieldObservation[]
+  recommendations       Recommendation[]
+  rotationScenarios     RotationScenario[]
+
+  @@index([farmId])
+}
+
+model SoilProfile {
+  id                 String   @id @default(cuid())
+  fieldId            String   @unique
+  field              Field    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  soilType           String   @default("unknown")
+  soilPh             Decimal? @db.Decimal(3, 1)
+  organicMatterLevel String   @default("unknown")
+  drainageClass      String   @default("unknown")
+  depthClass         String   @default("unknown")
+  updatedAt          DateTime @updatedAt
+}
+
+model CropHistory {
+  id          String   @id @default(cuid())
+  fieldId     String
+  field       Field    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  year        Int
+  season      String
+  cropCode    String
+  residueKept Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([fieldId, year])
+}
+
+model WeatherObservation {
+  id                 String   @id @default(cuid())
+  latitude           Decimal  @db.Decimal(8, 5)
+  longitude          Decimal  @db.Decimal(8, 5)
+  observationDate    DateTime @db.Date
+  provider           String
+  productIdentifier  String
+  productVersion     String
+  dataType           String
+  spatialResolution  String
+  precipMm           Decimal? @db.Decimal(6, 2)
+  tempMeanC          Decimal? @db.Decimal(5, 2)
+  tempMaxC           Decimal? @db.Decimal(5, 2)
+  tempMinC           Decimal? @db.Decimal(5, 2)
+  relHumidityPct     Decimal? @db.Decimal(5, 2)
+  windSpeed2mMs      Decimal? @db.Decimal(5, 2)
+  solarRadKwhM2      Decimal? @db.Decimal(5, 2)
+  surfaceSoilWetness Decimal? @db.Decimal(4, 3)
+  rootSoilWetness    Decimal? @db.Decimal(4, 3)
+  ndvi               Decimal? @db.Decimal(4, 3)
+  retrievedAt        DateTime @default(now())
+
+  @@unique([latitude, longitude, observationDate, provider, productIdentifier])
+  @@index([latitude, longitude, observationDate])
+}
+
+model WeatherForecast {
+  id                String   @id @default(cuid())
+  latitude          Decimal  @db.Decimal(8, 5)
+  longitude         Decimal  @db.Decimal(8, 5)
+  forecastTimestamp DateTime
+  provider          String   @default("OPEN_METEO_NON_NASA")
+  modelIdentifier   String   @default("ECMWF_IFS_GFS_BLEND")
+  precipProbPct     Decimal? @db.Decimal(5, 2)
+  precipAmountMm    Decimal? @db.Decimal(6, 2)
+  temp2mC           Decimal? @db.Decimal(5, 2)
+  relHumidity2mPct  Decimal? @db.Decimal(5, 2)
+  windSpeed10mMs    Decimal? @db.Decimal(5, 2)
+  windGusts10mMs    Decimal? @db.Decimal(5, 2)
+  retrievedAt       DateTime @default(now())
+
+  @@unique([latitude, longitude, forecastTimestamp, provider])
+  @@index([latitude, longitude, forecastTimestamp])
+}
+
+model Recommendation {
+  id               String   @id @default(cuid())
+  fieldId          String
+  field            Field    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  moduleType       String
+  decisionState    String
+  headline         String
+  summary          String
+  evidenceJson     Json
+  dataSourcesUsed  String[]
+  missingInfo      String[]
+  risks            String[]
+  suggestedActions String[]
+  confidenceLevel  String
+  generatedAt      DateTime @default(now())
+
+  @@index([fieldId, moduleType, generatedAt])
+}
+
+model RotationScenario {
+  id                  String   @id @default(cuid())
+  fieldId             String
+  field               Field    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  scenarioType        String
+  title               String
+  cropSequenceCodes   String[]
+  totalScore          Decimal  @db.Decimal(5, 2)
+  componentScoresJson Json
+  priorityWeightsJson Json
+  advantages          String[]
+  disadvantages       String[]
+  dataGaps            String[]
+  assumptions         String[]
+  rankingRationale    String
+  createdAt           DateTime @default(now())
+
+  @@index([fieldId, createdAt])
+}
+
+model FieldObservation {
+  id                     String   @id @default(cuid())
+  fieldId                String
+  field                  Field    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  observedAt             DateTime @default(now())
+  growthStage            String
+  visualMaturityPct      Int?
+  grainDrynessAssessment String
+  measuredGrainMoisture  Decimal? @db.Decimal(4, 1)
+  localRainGaugeMm       Decimal? @db.Decimal(5, 1)
+  notes                  String?
+  recordedOffline        Boolean  @default(false)
+  syncedAt               DateTime @default(now())
+
+  @@index([fieldId, observedAt])
+}
