@@ -2,7 +2,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const repoName = 'Nasa-Space-App-Challenge';
+
 export default defineConfig({
+  base: `/${repoName}/`,
   plugins: [
     react(),
     VitePWA({
